@@ -1,6 +1,8 @@
 <?php
+$_SERVER["HTTP_HOST"]=$argv[2];
+
 require dirname(__FILE__)."/../../include/db.php";
-require dirname(__FILE__)."/../../include/general.php";
+require_once dirname(__FILE__)."/../../include/general.php";
 require dirname(__FILE__)."/../../include/resource_functions.php";
 
 set_time_limit(0);

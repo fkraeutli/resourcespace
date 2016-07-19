@@ -11,10 +11,8 @@ function get_resource_path($ref,$getfilepath,$size,$generate=true,$extension="jp
 	# returns the correct path to resource $ref of size $size ($size==empty string is original resource)
 	# If one or more of the folders do not exist, and $generate=true, then they are generated
 	if(!preg_match('/^[a-zA-Z0-9]+$/', $extension)){$extension="jpg";}
-//	if(preg_match('/\w/', $extension)){$extension="jpg";}
-
-	    $override=hook("get_resource_path_override","general",array($ref,$getfilepath,$size,$generate,$extension,$scramble,$page,$watermarked,$file_modified,$alternative,$includemodified));
-	    if (is_string($override)) {return $override;}
+	$override=hook("get_resource_path_override","",array($ref,$getfilepath,$size,$generate,$extension,$scramble,$page,$watermarked,$file_modified,$alternative,$includemodified));
+	if (is_string($override)) {return $override;}
 
 	global $storagedir,$originals_separate_storage;
 
@@ -33,19 +31,27 @@ function get_resource_path($ref,$getfilepath,$size,$generate=true,$extension="jp
 		
 		$test_ext = explode(".",$fp);$test_ext=trim(strtolower($test_ext[count($test_ext)-1]));
 		
-		if (($test_ext == $extension) && (strlen($fp)>0) && (strpos($fp,"/")!==false) && !($alternative > 0))
-			{
-				
+        if (($test_ext == $extension || $alternative > 0) && strlen($fp)>0 && strpos($fp,"/")!==false)
+			{				
 			if ($getfilepath)
 				{
 				global $syncdir; 
-            	$syncdirmodified=hook("modifysyncdir","all",array($ref)); if ($syncdirmodified!=""){return $syncdirmodified;}	
-            	return $syncdir . "/" . $fp;
+            	$syncdirmodified=hook("modifysyncdir","all",array($ref)); if ($syncdirmodified!=""){return $syncdirmodified;}
+                if(!($alternative>0))
+                    {return $syncdir . "/" . $fp;}
+                elseif(!$generate)
+                    {
+                    // Alternative file and using staticsync. Would not be generating path if checking for an existing file.
+                    // Check if file is present in syncdir, else continue to get the $storagedir location
+                    $altfile = get_alternative_file($ref,$alternative);
+                    if($altfile["file_extension"]==$extension && file_exists($altfile["file_name"]))
+                        {return $altfile["file_name"];}
+                    }
 				}
 			else 
 				{
 				global $baseurl_short, $k;
-				return $baseurl_short . "pages/download.php?ref={$ref}&size={$size}&ext={$extension}&noattach=true&k={$k}&page={$page}"; 
+				return $baseurl_short . "pages/download.php?ref={$ref}&size={$size}&ext={$extension}&noattach=true&k={$k}&page={$page}&alternative={$alternative}"; 
 				}
 			}
 		}
@@ -148,7 +154,7 @@ function get_resource_path($ref,$getfilepath,$size,$generate=true,$extension="jp
 			$file .= "?v=" . urlencode($file_modified);
 			}
 		}
-	
+	debug("BANG " . $file);
 	return  $file;
 	}
 	
@@ -595,7 +601,13 @@ function update_resource_keyword_hitcount($resource,$search)
 		$found=resolve_keyword($keyword);
 		if ($found!==false) {$keys[]=resolve_keyword($keyword);}
 		}	
-	if (count($keys)>0) {sql_query("update resource_keyword set new_hit_count=new_hit_count+1 where resource='$resource' and keyword in (" . join(",",$keys) . ")",false,-1,true,0);}
+	if (count($keys)>0)
+        {
+        // Get all nodes matching these keywords
+		$nodes = get_nodes_from_keywords($keys);
+        update_resource_node_hitcount($resource,$nodes);
+        sql_query("update resource_keyword set new_hit_count=new_hit_count+1 where resource='$resource' and keyword in (" . join(",",$keys) . ")",false,-1,true,0);
+        }
 	}
 }
 	
@@ -608,8 +620,11 @@ function copy_hitcount_to_live()
 	# Also update the resource table
 	# greatest() is used so the value is taken from the hit_count column in the event that new_hit_count is zero to support installations that did not previously have a new_hit_count column (i.e. upgrade compatability)
 	sql_query("update resource set hit_count=greatest(hit_count,new_hit_count)");
+    
+	# Also now update resource_node_hitcount())
+	sql_query("update resource_node set hit_count=new_hit_count");
 	}
-	
+if(!function_exists("get_image_sizes")){
 function get_image_sizes($ref,$internal=false,$extension="jpg",$onlyifexists=true)
 	{
 	# Returns a table of available image sizes for resource $ref. The standard image sizes are translated using $lang. Custom image sizes are i18n translated.
@@ -708,6 +723,23 @@ function get_image_sizes($ref,$internal=false,$extension="jpg",$onlyifexists=tru
 		$lastrestricted=$sizes[$n]["allow_restricted"];
 		}
 	return $return;
+	}
+}
+function get_preview_quality($size)
+	{
+	global $imagemagick_quality,$preview_quality_unique;
+	$preview_quality=$imagemagick_quality; // default
+	if($preview_quality_unique)
+		{
+		debug("convert: select quality value from preview_size where id='$size'");
+		$quality_val=sql_value("select quality value from preview_size where id='{$size}'",'');
+		if($quality_val!='')
+			{
+			$preview_quality=$quality_val;
+			}
+		}
+	debug("convert: preview quality for $size=$preview_quality");
+	return $preview_quality;
 	}
 
 function trim_array($array,$trimchars='')
@@ -923,7 +955,7 @@ function get_user_by_email($email)
     return $return;
 }
 
-function get_usergroups($usepermissions=false,$find="")
+function get_usergroups($usepermissions = false, $find = '', $id_name_pair_array = false)
 {
     # Returns a list of user groups. The standard user groups are translated using $lang. Custom user groups are i18n translated.
     # Puts anything starting with 'General Staff Users' - in the English default names - at the top (e.g. General Staff).
@@ -966,6 +998,19 @@ function get_usergroups($usepermissions=false,$find="")
         $return = array_values($return); # Reassigns the indices.
     }
 
+    // Return only an array with ref => name pairs
+    if($id_name_pair_array)
+        {
+        $return_id_name_array = array();
+
+        foreach($return as $user_group)
+            {
+            $return_id_name_array[$user_group['ref']] = $user_group['name'];
+            }
+
+        return $return_id_name_array;
+        }
+
     return $return;
 
 }    
@@ -974,7 +1019,7 @@ function get_usergroup($ref)
 {
     # Returns the user group corresponding to the $ref. A standard user group name is translated using $lang. A custom user group name is i18n translated.
 
-    $return = sql_query("select ref,name,permissions,fixed_theme,parent,search_filter,edit_filter,ip_restrict,resource_defaults,config_options,welcome_message,request_mode,allow_registration_selection,derestrict_filter,group_specific_logo from usergroup where ref='$ref'");
+    $return = sql_query("select ref,name,permissions,parent,search_filter,edit_filter,ip_restrict,resource_defaults,config_options,welcome_message,request_mode,allow_registration_selection,derestrict_filter,group_specific_logo from usergroup where ref='$ref'");
     if (count($return)==0) {return false;}
     else {
         $return[0]["name"] = lang_or_i18n_get_translated($return[0]["name"], "usergroup-");
@@ -989,93 +1034,157 @@ function get_user($ref)
         if (isset($udata_cache[$ref])){
           $return=$udata_cache[$ref];
         } else {
-	$udata_cache[$ref]=sql_query("select u.*, g.permissions, g.fixed_theme, g.parent, g.search_filter, g.edit_filter, g.ip_restrict ip_restrict_group, g.name groupname, u.ip_restrict ip_restrict_user, resource_defaults,g.config_options,g.request_mode, g.derestrict_filter from user u left join usergroup g on u.usergroup=g.ref where u.ref='$ref'");
-	}
+	$udata_cache[$ref]=sql_query("select u.*, g.permissions, g.parent, g.search_filter, g.edit_filter, g.ip_restrict ip_restrict_group, g.name groupname, u.ip_restrict ip_restrict_user, u.search_filter_override, resource_defaults,g.config_options,g.request_mode, g.derestrict_filter from user u left join usergroup g on u.usergroup=g.ref where u.ref='$ref'");
+    }
     
 	# Return a user's credentials.
 	if (count($udata_cache[$ref])>0) {return $udata_cache[$ref][0];} else {return false;}
 	}
 }
 	
-if (!function_exists("save_user")){	
+if(!function_exists('save_user')){
+/**
+* Function used to update or delete a user.
+* Note: data is taken from the submitted form
+* 
+* @param string $ref ID of the user
+* 
+* @return boolean|string
+*/
 function save_user($ref)
-	{
-	global $lang, $allow_password_email;
+    {
+    global $lang, $allow_password_email, $home_dash;
+
+    # Save user details, data is taken from the submitted form.
+    if(getval('deleteme', '') != '')
+        {
+        sql_query("DELETE FROM user WHERE ref='$ref'");
+        include dirname(__FILE__) ."/dash_functions.php";
+        empty_user_dash($ref);
+        log_activity(null, LOG_CODE_DELETED, null, 'user', null, $ref);
+
+        return true;
+        }
+    else
+        {
+        $current_user_data = get_user($ref);
+
+        // Get submitted values
+        $username               = trim(getvalescaped('username', ''));
+        $password               = trim(getvalescaped('password', ''));
+        $fullname               = trim(getvalescaped('fullname', ''));
+        $email                  = trim(getvalescaped('email', ''));
+        $expires                = "'" . getvalescaped('account_expires', '') . "'";
+        $usergroup              = trim(getvalescaped('usergroup', ''));
+        $ip_restrict            = trim(getvalescaped('ip_restrict', ''));
+        $search_filter_override = trim(getvalescaped('search_filter_override', ''));
+        $comments               = trim(getvalescaped('comments', ''));
+
+        $suggest = getval('suggest', '');
+
+        # Username or e-mail address already exists?
+        $c = sql_value("SELECT count(*) value FROM user WHERE ref <> '$ref' AND (username = '" . $username . "' OR email = '" . $email . "')", 0);
+        if($c > 0 && $email != '')
+            {
+            return false;
+            }
+
+        // Password checks:
+        if($suggest != '')
+            {
+            $password = make_password();
+            }
+        elseif($password != $lang['hidden'])	
+            {
+            $message = check_password($password);
+            if($message !== true)
+                {
+                return $message;
+                }
+            }
+
+        if($expires == "''")
+            {
+            $expires = 'null';
+            }
+
+        $passsql = '';
+        if($password != $lang['hidden'])
+            {
+            # Save password.
+            if($suggest == '')
+                {
+                $password = hash('sha256', md5('RS' . $username . $password));
+                }
+
+            $passsql = ",password='" . $password . "',password_last_change=now()";
+            }
+
+        // Full name checks
+        if('' == $fullname && '' == $suggest)
+            {
+            return $lang['setup-admin_fullname_error'];
+            }
+
+        $additional_sql = hook('additionaluserfieldssave');
+
+        log_activity(null, LOG_CODE_EDITED, $username, 'user', 'username', $ref);
+        log_activity(null, LOG_CODE_EDITED, $fullname, 'user', 'fullname', $ref);
+        log_activity(null, LOG_CODE_EDITED, $email, 'user', 'email', $ref);
+
+        if(isset($current_user_data['usergroup']) && $current_user_data['usergroup'] != $usergroup)
+            {
+            log_activity(null, LOG_CODE_EDITED, $usergroup, 'user', 'usergroup', $ref);
+            }
+
+        log_activity(null, LOG_CODE_EDITED, $ip_restrict, 'user', 'ip_restrict', $ref, null, '');
+        log_activity(null, LOG_CODE_EDITED, $search_filter_override, 'user', 'search_filter_override', $ref, null, '');
+        log_activity(null, LOG_CODE_EDITED, $expires, 'user', 'account_expires', $ref);
+        log_activity(null, LOG_CODE_EDITED, $comments, 'user', 'comments', $ref);
+        log_activity(null, LOG_CODE_EDITED, ((getval('approved', '') == '') ? '0' : '1'), 'user', 'approved', $ref);
+
+        sql_query("update user set
+        username='" . $username . "'" . $passsql . ",
+        fullname='" . $fullname . "',
+        email='" . $email . "',
+        usergroup='" . $usergroup . "',
+        account_expires=$expires,
+        ip_restrict='" . $ip_restrict . "',
+        search_filter_override='" . $search_filter_override . "',
+        comments='" . $comments . "',
+        approved='" . ((getval('approved', '') == "") ? '0' : '1') . "' $additional_sql where ref='$ref'");
+        }
+
+        // Add user group dash tiles as soon as we've changed the user group
+        if($home_dash)
+            {
+            // If user group has changed, remove all user dash tiles that were valid for the old user group
+            if((isset($current_user_data['usergroup']) && '' != $current_user_data['usergroup']) && $current_user_data['usergroup'] != $usergroup)
+                {
+                sql_query("DELETE FROM user_dash_tile WHERE user = '{$ref}' AND dash_tile IN (SELECT dash_tile FROM usergroup_dash_tile WHERE usergroup = '{$current_user_data['usergroup']}')");
+                }
+
+            include __DIR__ . '/dash_functions.php';
+            build_usergroup_dash($usergroup, $ref);
+            }
+
+    if($allow_password_email && getval('emailme', '') != '')
+        {
+        email_user_welcome(getval('email', ''), getval('username', ''), getval('password', ''), $usergroup);
+        }
+    elseif(getval('emailresetlink', '') != '')
+        {
+        email_reset_link($email, true);
+        }
 		
-	# Save user details, data is taken from the submitted form.
-	if (getval("deleteme","")!="")
+	if(getval('approved', '')!='')
 		{
-		sql_query("delete from user where ref='$ref'");
-		include dirname(__FILE__) ."/dash_functions.php";
-		empty_user_dash($ref);
-		log_activity(null,LOG_CODE_DELETED,null,'user',null,$ref);
-		return true;
+		# Clear any user request messages
+	    message_remove_related(USER_REQUEST,$ref);
 		}
-	else
-		{
-		# Username or e-mail address already exists?
-		$c=sql_value("select count(*) value from user where ref<>'$ref' and (username='" . getvalescaped("username","") . "' or email='" . getvalescaped("email","") . "')",0);
-		if (($c>0) && (getvalescaped("email","")!="")) {return false;}
-		
-		$password=getvalescaped("password","");
-		if (getval("suggest","")!="")
-			{
-			$password=make_password();
-			}
-		elseif ($password!=$lang["hidden"])	
-			{
-			$message=check_password($password);
-			if ($message!==true) {return $message;}
-			}
-		
-		$expires="'" . getvalescaped("account_expires","") . "'";
-		if ($expires=="''") {$expires="null";}
-		
-		$passsql="";
-		if ($password!=$lang["hidden"])	
-			{
-			# Save password.
-			if (getval("suggest","")=="")
-				{
-				$password = hash('sha256', md5('RS' . getvalescaped('username', '') . $password));
-				}
 
-			$passsql=",password='" . $password . "',password_last_change=now()";
-			}
-			
-		$additional_sql=hook("additionaluserfieldssave");
-
-		log_activity(null,LOG_CODE_EDITED,trim(getvalescaped("username","")),'user','username',$ref);
-		log_activity(null,LOG_CODE_EDITED,trim(getvalescaped("fullname","")),'user','fullname',$ref);
-		log_activity(null,LOG_CODE_EDITED,trim(getvalescaped("email","")),'user','email',$ref);
-		log_activity(null,LOG_CODE_EDITED,trim(getvalescaped("usergroup","")),'user','usergroup',$ref);
-		log_activity(null,LOG_CODE_EDITED,getvalescaped("ip_restrict",""),'user','ip_restrict',$ref,null,'');
-		log_activity(null,LOG_CODE_EDITED,$expires,'user','account_expires',$ref);
-		log_activity(null,LOG_CODE_EDITED,getvalescaped("comments",""),'user','comments',$ref);
-		log_activity(null,LOG_CODE_EDITED,((getval("approved","")=="")?"0":"1"),'user','approved',$ref);
-
-		sql_query("update user set
-			username='" . trim(getvalescaped("username","")) . "'" . $passsql . ",
-			fullname='" . getvalescaped("fullname","") . "',
-			email='" . getvalescaped("email","") . "',
-			usergroup='" . getvalescaped("usergroup","") . "',
-			account_expires=$expires,
-			ip_restrict='" . getvalescaped("ip_restrict","") . "',
-			comments='" . getvalescaped("comments","") . "',
-			approved='" . ((getval("approved","")=="")?"0":"1") . "' $additional_sql where ref='$ref'");
-		}
-
-	if ($allow_password_email && getval("emailme","")!="")
-		{
-		email_user_welcome(getval("email",""),getval("username",""),getval("password",""),getvalescaped("usergroup",""));
-		}
-	elseif (getval("emailresetlink","")!="")
-		{
-		email_reset_link(getvalescaped("email",""), true);
-		}	
-	
-	return true;
-	}
+    return true;
+    }
 }
 
 function email_user_welcome($email,$username,$password,$usergroup)
@@ -1187,7 +1296,8 @@ if (!function_exists("auto_create_user_account")){
 function auto_create_user_account()
 	{
 	# Automatically creates a user account (which requires approval unless $auto_approve_accounts is true).
-	global $applicationname,$user_email,$baseurl,$email_notify,$lang,$user_account_auto_creation_usergroup,$registration_group_select,$auto_approve_accounts,$auto_approve_domains,$customContents,$language;
+	global $applicationname, $user_email, $baseurl, $email_notify, $lang, $user_account_auto_creation_usergroup, $registration_group_select, 
+           $auto_approve_accounts, $auto_approve_domains, $customContents, $language, $home_dash;
 
 	# Work out which user group to set. Allow a hook to change this, if necessary.
 	$altgroup=hook("auto_approve_account_switch_group");
@@ -1248,42 +1358,54 @@ function auto_create_user_account()
 
 	# Create the user
 	sql_query("insert into user (username,password,fullname,email,usergroup,comments,approved,lang) values ('" . $newusername . "','" . $password . "','" . getvalescaped("name","") . "','" . $email . "','" . $usergroup . "','" . ( escape_check($customContents) . "\n" . getvalescaped("userrequestcomment","")  ) . "'," . (($approve)?1:0) . ",'$language')");
-	$new=sql_insert_id();
+	$new = sql_insert_id();
+
+    // Create dash tiles for the new user
+    if($home_dash)
+        {
+        include_once dirname(__FILE__) . '/dash_functions.php';
+
+        create_new_user_dash($new);
+        build_usergroup_dash($usergroup, $new);
+        }
+
     hook("afteruserautocreated", "all",array("new"=>$new));
-	if ($approve)
+	global $anonymous_login;
+    if(isset($anonymous_login))
+        {
+        global $rs_session;
+        $rs_session=get_rs_session_id();
+        if($rs_session!==false)
+            {				
+            # Copy any anonymous session collections to the new user account 
+            if (!function_exists("get_session_collections"))
+                {
+                include_once dirname(__FILE__) . "/../include/collections_functions.php";
+                }
+
+            global $username, $userref;
+
+            if(is_array($anonymous_login) && array_key_exists($baseurl, $anonymous_login))
+                {
+                $anonymous_login = $anonymous_login[$baseurl];
+                }
+
+            $username=$anonymous_login;
+            $userref=sql_value("SELECT ref value FROM user where username='$anonymous_login'","");
+            $sessioncollections=get_session_collections($rs_session,$userref,false);
+            if(count($sessioncollections)>0)
+                {
+                foreach($sessioncollections as $sessioncollection)
+                    {
+                    update_collection_user($sessioncollection,$new);
+                    }
+                sql_query("UPDATE user SET current_collection='$sessioncollection' WHERE ref='$new'");
+                }
+            }
+        }
+    if ($approve)
 		{
-		# Auto approving
-		 global $anonymous_login;
-		if(isset($anonymous_login))
-			{
-			global $rs_session;
-			$rs_session=get_rs_session_id();
-			if($rs_session==false){break;}
-			# Copy any anonymous session collections to the new user account 
-			if (!function_exists("get_session_collections"))
-				{
-				include_once dirname(__FILE__) . "/../include/collections_functions.php";
-				}
-
-			global $username, $userref;
-
-			if(is_array($anonymous_login) && array_key_exists($baseurl, $anonymous_login))
-				{
-				$anonymous_login = $anonymous_login[$baseurl];
-				}
-
-			$username=$anonymous_login;
-			$userref=sql_value("SELECT ref value FROM user where username='$anonymous_login'","");
-			$sessioncollections=get_session_collections($rs_session,$userref,false);
-			if(count($sessioncollections)>0)
-				{
-				foreach($sessioncollections as $sessioncollection)
-					{
-					update_collection_user($sessioncollection,$new);
-					}
-				sql_query("UPDATE user SET current_collection='$sessioncollection' WHERE ref='$new'");
-				}
-			}
+		# Auto approving		
 		if($bypassemail)
 			{
 			// No requirement to check anything else e.g. a valid email domain. We can take user direct to the password reset page to set the new account
@@ -1311,8 +1433,34 @@ function auto_create_user_account()
 		$templatevars['linktouser']="$baseurl?u=$new";
 
 		$message=$lang["userrequestnotification1"] . "\n\n" . $lang["name"] . ": " . $templatevars['name'] . "\n\n" . $lang["email"] . ": " . $templatevars['email'] . "\n\n" . $lang["comment"] . ": " . $templatevars['userrequestcomment'] . "\n\n" . $lang["ipaddress"] . ": '" . $_SERVER["REMOTE_ADDR"] . "'\n\n" . $customContents . "\n\n" . $lang["userrequestnotification3"] . "\n$baseurl?u=$new";
-
-		send_mail($email_notify,$applicationname . ": " . $lang["requestuserlogin"] . " - " . getval("name",""),$message,"",$user_email,"emailuserrequest",$templatevars,getval("name",""));
+		
+		$notificationmessage=$lang["userrequestnotification1"] . "\n" . $lang["name"] . ": " . $templatevars['name'] . "\n" . $lang["email"] . ": " . $templatevars['email'] . "\n" . $lang["comment"] . ": " . $templatevars['userrequestcomment'] . "\n" . $lang["ipaddress"] . ": '" . $_SERVER["REMOTE_ADDR"] . "'\n" . $customContents . "\n" . $lang["userrequestnotification3"];
+       
+	   // Need to global the usergroup so that we can find the appropriate admins
+	   global $usergroup;
+       $approval_notify_users=get_notification_users("USER_ADMIN"); 
+       $message_users=array();
+	   global $user_pref_user_management_notifications, $email_user_notifications;
+	   foreach($approval_notify_users as $approval_notify_user)
+			{
+			get_config_option($approval_notify_user['ref'],'user_pref_user_management_notifications', $send_message, $user_pref_user_management_notifications);
+			if(!$send_message){continue;} 
+			
+			get_config_option($approval_notify_user['ref'],'email_user_notifications', $send_email, $email_user_notifications);    
+			if($send_email && $approval_notify_user["email"]!="")
+				{
+				send_mail($approval_notify_user["email"],$applicationname . ": " . $lang["requestuserlogin"] . " - " . getval("name",""),$message,"",$user_email,"emailuserrequest",$templatevars,getval("name",""));
+				}        
+			else
+				{
+				$message_users[]=$approval_notify_user["ref"];
+				}
+			}
+		if (count($message_users)>0)
+			{
+			// Send a message with long timeout (30 days)
+			message_add($message_users,$notificationmessage,$templatevars['linktouser'],$new,MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN,60 * 60 *24 * 30, USER_REQUEST,$new );
+			}
 		}
 
 	return true;
@@ -1325,10 +1473,33 @@ function email_user_request()
 	global $applicationname,$user_email,$baseurl,$email_notify,$lang,$customContents;
 
 	# Build a message
+
 	$message=$lang["userrequestnotification1"] . "\n\n" . $lang["name"] . ": " . getval("name","") . "\n\n" . $lang["email"] . ": " . getval("email","") . "\n\n" . $lang["comment"] . ": " . getval("userrequestcomment","") . "\n\n" . $lang["ipaddress"] . ": '" . $_SERVER["REMOTE_ADDR"] . "'\n\n" . $customContents . "\n\n" . $lang["userrequestnotification2"] . "\n$baseurl";
-
-	send_mail($email_notify,$applicationname . ": " . $lang["requestuserlogin"] . " - " . getval("name",""),$message,"",$user_email,"","",getval("name",""));
-
+	
+	$notificationmessage=$lang["userrequestnotification1"] . "\n" . $lang["name"] . ": " . getvalescaped("name","") . "\n" . $lang["email"] . ": " . getvalescaped("email","") . "\n" . $lang["comment"] . ": " . getvalescaped("userrequestcomment","") . "\n" . $lang["ipaddress"] . ": '" . $_SERVER["REMOTE_ADDR"] . "'\n" . escape_check($customContents) . "\n";
+	
+	$approval_notify_users=get_notification_users("USER_ADMIN"); 
+	$message_users=array();
+	foreach($approval_notify_users as $approval_notify_user)
+			{
+			get_config_option($approval_notify_user['ref'],'user_pref_user_management_notifications', $send_message);		  
+            if($send_message==false){continue;}		
+			
+			get_config_option($approval_notify_user['ref'],'email_user_notifications', $send_email);    
+			if($send_email && $approval_notify_user["email"]!="")
+				{
+				send_mail($approval_notify_user["email"],$applicationname . ": " . $lang["requestuserlogin"] . " - " . getval("name",""),$message,"",$user_email,"","",getval("name",""));
+				}        
+			else
+				{
+				$message_users[]=$approval_notify_user["ref"];
+				}
+			}
+		if (count($message_users)>0)
+			{
+			// Send a message with long timeout (30 days)
+            message_add($message_users,$notificationmessage,"",0,MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN,60 * 60 *24 * 30);
+			}
 	return true;
 	}
 
@@ -1347,7 +1518,7 @@ function new_user($newuser)
 	#Create Default Dash for the new user
 	if($home_dash)
 		{
-		include dirname(__FILE__)."/dash_functions.php";
+		include_once dirname(__FILE__)."/dash_functions.php";
 		create_new_user_dash($newref);
 		}
 	
@@ -1363,7 +1534,7 @@ function new_user($newuser)
 function get_stats_activity_types()
 	{
 	# Returns a list of activity types for which we have stats data (Search, User Session etc.)
-	return sql_array("select distinct activity_type value from daily_stat order by activity_type");
+	return sql_array("SELECT DISTINCT activity_type `value` FROM daily_stat ORDER BY activity_type");
 	}
 
 function get_stats_years()
@@ -1382,9 +1553,22 @@ function newlines($text)
 
 function get_active_users()
 	{
-	# Returns a list of active users, i.e. users still logged on with a last-active time within the last 2 hours.
-	return sql_query("select username,round((unix_timestamp(now())-unix_timestamp(last_active))/60,0) t from user where logged_in=1 and unix_timestamp(now())-unix_timestamp(last_active)<(3600*2) order by t;");
-	}
+    global $usergroup, $U_perm_strict;
+    $sql = "where logged_in=1 and unix_timestamp(now())-unix_timestamp(last_active)<(3600*2)";
+    if (checkperm("U") && $U_perm_strict)
+        {
+        $sql.= " and find_in_set('" . $usergroup . "',g.parent) ";
+        }
+
+    // Return users in both user's user group and children groups
+    elseif (checkperm('U') && !$U_perm_strict)
+        {
+    	$sql .= " and (g.ref = '" . $usergroup . "' OR find_in_set('" . $usergroup . "', g.parent))";
+        }
+    
+    # Returns a list of all active users, i.e. users still logged on with a last-active time within the last 2 hours.
+    return sql_query("select u.username,round((unix_timestamp(now())-unix_timestamp(u.last_active))/60,0) t from user u left outer join usergroup g on u.usergroup=g.ref $sql order by t;");
+    }
 
 function get_all_site_text($findpage="",$findname="",$findtext="")
 	{
@@ -1814,8 +1998,8 @@ function bulk_mail($userlist,$subject,$text,$html=false,$message_type=MESSAGE_EN
 
 	$templatevars['text']=stripslashes(str_replace("\\r\\n","\n",$text));
 	$body=$templatevars['text'];
-
-	if ($message_type==MESSAGE_ENUM_NOTIFICATION_TYPE_EMAIL)
+	
+	if ($message_type==MESSAGE_ENUM_NOTIFICATION_TYPE_EMAIL || $message_type==(MESSAGE_ENUM_NOTIFICATION_TYPE_EMAIL | MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN))
 		{
 		$emails=resolve_user_emails($ulist);
 		$emails=$emails['emails'];
@@ -1829,7 +2013,7 @@ function bulk_mail($userlist,$subject,$text,$html=false,$message_type=MESSAGE_EN
 				}
 			}
 		}
-	elseif ($message_type==MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN)
+	if ($message_type==MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN || $message_type==(MESSAGE_ENUM_NOTIFICATION_TYPE_EMAIL | MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN))
 		{
 		$user_refs = array();
 		foreach ($ulist as $user)
@@ -1840,7 +2024,12 @@ function bulk_mail($userlist,$subject,$text,$html=false,$message_type=MESSAGE_EN
 				array_push($user_refs,$user_ref);
 				}
 			}
-		message_add($user_refs,$body,$url);
+		if($message_type==(MESSAGE_ENUM_NOTIFICATION_TYPE_EMAIL | MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN) && $html)
+			{
+			# strip the tags out
+			$body=strip_tags($body);
+			}
+		message_add($user_refs,$body,$url,null,$message_type);
 		}
 
     # Return an empty string (all OK).
@@ -2024,7 +2213,7 @@ function send_mail_phpmailer($email,$subject,$message="",$from="",$reply_to="",$
 		{
 		# Attempt to verify users by email, which allows us to get the email template by lang and usergroup
 		$to_usergroup=sql_query("select lang,usergroup from user where email ='" . escape_check($email) . "'","");
-
+        
 		if (count($to_usergroup)!=0)
 			{
 			$to_usergroupref=$to_usergroup[0]['usergroup'];
@@ -2040,8 +2229,7 @@ function send_mail_phpmailer($email,$subject,$message="",$from="",$reply_to="",$
 		if (isset($to_usergroupref))
 			{	
 			$modified_to_usergroupref=hook("modifytousergroup","",$to_usergroupref);
-			if ($modified_to_usergroupref!==null){$to_usergroupref=$modified_to_usergroupref;}
-
+			if (is_int($modified_to_usergroupref)){$to_usergroupref=$modified_to_usergroupref;}
 			$results=sql_query("select language,name,text from site_text where page='all' and name='$html_template' and specific_to_group='$to_usergroupref'");
 			}
 		else 
@@ -2459,28 +2647,32 @@ function sorthighlights($a, $b)
 function pager($break=true)
 	{
 	global $curpage,$url,$totalpages,$offset,$per_page,$lang,$jumpcount,$pager_dropdown,$pagename;
+
+    $modal  = ('true' == getval('modal', ''));
+
 	$jumpcount++;
 	if(!hook("replace_pager")){
 		if ($totalpages!=0 && $totalpages!=1){?>     
-			<span class="TopInpageNavRight"><?php if ($break) { ?>&nbsp;<br /><?php } hook("custompagerstyle"); if ($curpage>1) { ?><a class="prevPageLink" href="<?php echo $url?>&amp;go=prev&amp;offset=<?php echo urlencode($offset-$per_page) ?>" <?php if(!hook("replacepageronclick_prev")){?>onClick="return CentralSpaceLoad(this, true);" <?php } ?>><?php } ?>&lt;&nbsp;<?php echo $lang["previous"]?><?php if ($curpage>1) { ?></a><?php } ?>&nbsp;|
+			<span class="TopInpageNavRight"><?php if ($break) { ?>&nbsp;<br /><?php } hook("custompagerstyle"); if ($curpage>1) { ?><a class="prevPageLink" title="<?php echo $lang["previous"]?>" href="<?php echo $url?>&amp;go=prev&amp;offset=<?php echo urlencode($offset-$per_page) ?>" <?php if(!hook("replacepageronclick_prev")){?>onClick="return <?php echo $modal ? 'Modal' : 'CentralSpace'; ?>Load(this, true);" <?php } ?>><?php } ?><i class="fa fa-arrow-left"></i><?php if ($curpage>1) { ?></a><?php } ?>&nbsp;&nbsp;
 
 			<?php if ($pager_dropdown){
 				$id=rand();?>
-				<select id="pager<?php echo $id;?>" class="ListDropdown" style="width:50px;" <?php if(!hook("replacepageronchange_drop","",array($id))){?>onChange="var jumpto=document.getElementById('pager<?php echo $id?>').value;if ((jumpto>0) && (jumpto<=<?php echo $totalpages?>)) {return CentralSpaceLoad('<?php echo $url?>&amp;go=page&amp;offset=' + ((jumpto-1) * <?php echo urlencode($per_page) ?>), true);}" <?php } ?>>
+				<select id="pager<?php echo $id;?>" class="ListDropdown" style="width:50px;" <?php if(!hook("replacepageronchange_drop","",array($id))){?>onChange="var jumpto=document.getElementById('pager<?php echo $id?>').value;if ((jumpto>0) && (jumpto<=<?php echo $totalpages?>)) {return <?php echo $modal ? 'Modal' : 'CentralSpace'; ?>Load('<?php echo $url?>&amp;go=page&amp;offset=' + ((jumpto-1) * <?php echo urlencode($per_page) ?>), true);}" <?php } ?>>
 				<?php for ($n=1;$n<$totalpages+1;$n++){?>
 					<option value='<?php echo $n?>' <?php if ($n==$curpage){?>selected<?php } ?>><?php echo $n?></option>
 				<?php } ?>
 				</select>
 			<?php } else { ?>
-				<a href="#" title="<?php echo $lang["jumptopage"]?>" onClick="p=document.getElementById('jumppanel<?php echo $jumpcount?>');if (p.style.display!='block') {p.style.display='block';document.getElementById('jumpto<?php echo $jumpcount?>').focus();} else {p.style.display='none';}; return false;"><?php echo $lang["page"]?>&nbsp;<?php echo htmlspecialchars($curpage) ?>&nbsp;<?php echo $lang["of"]?>&nbsp;<?php echo $totalpages?></a>
+
+				<div class="JumpPanel" id="jumppanel<?php echo $jumpcount?>" style="display:none;"><?php echo $lang["jumptopage"]?>: <input type="text" size="1" id="jumpto<?php echo $jumpcount?>" onkeydown="var evt = event || window.event;if (evt.keyCode == 13) {var jumpto=document.getElementById('jumpto<?php echo $jumpcount?>').value;if (jumpto<1){jumpto=1;};if (jumpto><?php echo $totalpages?>){jumpto=<?php echo $totalpages?>;};<?php echo $modal ? 'Modal' : 'CentralSpace'; ?>Load('<?php echo $url?>&amp;go=page&amp;offset=' + ((jumpto-1) * <?php echo urlencode($per_page) ?>), true);}">
+			&nbsp;<a class="fa fa-times-circle" href="#" onClick="document.getElementById('jumppanel<?php echo $jumpcount?>').style.display='none';document.getElementById('jumplink<?php echo $jumpcount?>').style.display='inline';"></a></div>
+			
+				<a href="#" id="jumplink<?php echo $jumpcount?>" title="<?php echo $lang["jumptopage"]?>" onClick="document.getElementById('jumppanel<?php echo $jumpcount?>').style.display='inline';document.getElementById('jumplink<?php echo $jumpcount?>').style.display='none';document.getElementById('jumpto<?php echo $jumpcount?>').focus(); return false;"><?php echo $lang["page"]?>&nbsp;<?php echo htmlspecialchars($curpage) ?>&nbsp;<?php echo $lang["of"]?>&nbsp;<?php echo $totalpages?></a>
 			<?php } ?>
 
-			|&nbsp;<?php if ($curpage<$totalpages) { ?><a class="nextPageLink" href="<?php echo $url?>&amp;go=next&amp;offset=<?php echo urlencode($offset+$per_page) ?>" <?php if(!hook("replacepageronclick_next")){?>onClick="return CentralSpaceLoad(this, true);" <?php } ?>><?php } ?><?php echo $lang["next"]?>&nbsp;&gt;<?php if ($curpage<$totalpages) { ?></a><?php } hook("custompagerstyleend"); ?>
+			&nbsp;&nbsp;<?php if ($curpage<$totalpages) { ?><a class="nextPageLink" title="<?php echo $lang["next"]?>" href="<?php echo $url?>&amp;go=next&amp;offset=<?php echo urlencode($offset+$per_page) ?>" <?php if(!hook("replacepageronclick_next")){?>onClick="return <?php echo $modal ? 'Modal' : 'CentralSpace'; ?>Load(this, true);" <?php } ?>><?php } ?><i class="fa fa-arrow-right"></i><?php if ($curpage<$totalpages) { ?></a><?php } hook("custompagerstyleend"); ?>
 			</span>
-			<?php if (!$pager_dropdown){?>
-				<div id="jumppanel<?php echo $jumpcount?>" style="display:none;margin-top:5px;"><?php echo $lang["jumptopage"]?>: <input type="text" size="3" id="jumpto<?php echo $jumpcount?>" onkeydown="var evt = event || window.event;if (evt.keyCode == 13) {var jumpto=document.getElementById('jumpto<?php echo $jumpcount?>').value;if (jumpto<1){jumpto=1;};if (jumpto><?php echo $totalpages?>){jumpto=<?php echo $totalpages?>;};CentralSpaceLoad('<?php echo $url?>&amp;go=page&amp;offset=' + ((jumpto-1) * <?php echo urlencode($per_page) ?>), true);}">
-			&nbsp;<input type="submit" name="jump" value="<?php echo $lang["jump"]?>" onClick="var jumpto=document.getElementById('jumpto<?php echo $jumpcount?>').value;if (jumpto<1){jumpto=1;};if (jumpto><?php echo $totalpages?>){jumpto=<?php echo $totalpages?>;};CentralSpaceLoad('<?php echo $url?>&amp;offset=' + ((jumpto-1) * <?php echo urlencode($per_page) ?>), true);"></div>
-			<?php } ?>
+			
 		<?php } else { ?><span class="HorizontalWhiteNav">&nbsp;</span><div <?php if ($pagename=="search"){?>style="display:block;"<?php } else { ?>style="display:inline;"<?php }?>>&nbsp;</div><?php } ?>
 		<?php
 		}
@@ -2799,7 +2991,7 @@ function send_statistics()
 	$total_resources=sql_value("select count(*) value from resource",0);
 	
 	# Send stats
-	@file("http://www.montala.net/rs_stats.php?users=" . $total_users . "&resources=" . $total_resources);
+	@file("http://www.montala.com/rs_stats.php?users=" . $total_users . "&resources=" . $total_resources);
 	
 	# Update last sent date/time.
 	sql_query("delete from sysvars where name='last_sent_stats'");
@@ -2828,7 +3020,7 @@ function get_simple_search_fields()
     if (isset($country_search) && $country_search) {$sql=" or ref=3";}
 
     # Executes query.
-    $fields = sql_query("select *, ref, name, title, type, order_by, keywords_index, partial_index, resource_type, resource_column, display_field, use_for_similar, iptc_equiv, display_template, tab_name, required, smart_theme_name, exiftool_field, advanced_search, simple_search, help_text, display_as_dropdown, external_user_access, autocomplete_macro, hide_when_uploading, hide_when_restricted, value_filter, exiftool_filter, omit_when_copying, tooltip_text from resource_type_field where (simple_search=1 $sql) and keywords_index=1 order by resource_type,order_by");
+    $fields = sql_query("select *, ref, name, title, type, order_by, keywords_index, partial_index, resource_type, resource_column, display_field, use_for_similar, iptc_equiv, display_template, tab_name, required, smart_theme_name, exiftool_field, advanced_search, simple_search, help_text, display_as_dropdown, external_user_access, autocomplete_macro, hide_when_uploading, hide_when_restricted, value_filter, exiftool_filter, omit_when_copying, tooltip_text, display_condition from resource_type_field where (simple_search=1 $sql) and keywords_index=1 order by resource_type,order_by");
 
     # Applies field permissions and translates field titles in the newly created array.
     $return = array();
@@ -2841,7 +3033,274 @@ function get_simple_search_fields()
     }
     return $return;
 }
-	
+
+function check_display_condition($n, $field)
+{
+  global $fields, $scriptconditions, $required_fields_exempt, $blank_edit_template, $ref, $use;
+
+  $displaycondition=true;
+  $s=explode(";",$field["display_condition"]);
+  $condref=0;
+    foreach ($s as $condition) # Check each condition
+    {
+       $displayconditioncheck=false;
+       $s=explode("=",$condition);
+        for ($cf=0;$cf<count($fields);$cf++) # Check each field to see if needs to be checked
+        {
+            node_field_options_override($fields[$cf]);
+            if ($s[0]==$fields[$cf]["name"]) # this field needs to be checked
+            {
+                $scriptconditions[$condref]["field"] = $fields[$cf]["ref"];  # add new jQuery code to check value
+                $scriptconditions[$condref]['type'] = $fields[$cf]['type'];
+                $scriptconditions[$condref]['options'] = (in_array($fields[$cf]['type'],array(2, 3, 7, 9, 12))?implode(",",$fields[$cf]['node_options']):$fields[$cf]['options']);
+
+                $checkvalues=$s[1];
+                $validvalues=explode("|",mb_strtoupper($checkvalues));
+                $scriptconditions[$condref]["valid"]= "\"";
+                $scriptconditions[$condref]["valid"].= implode("\",\"",$validvalues);
+                $scriptconditions[$condref]["valid"].= "\"";
+                $v=trim_array(explode(",",mb_strtoupper($fields[$cf]["value"])));
+
+                // If blank edit template is used, on upload form the dependent fields should be hidden
+                if($blank_edit_template && $ref < 0 && $use === '-1') {
+                   $v = array();
+                }
+                
+                foreach ($validvalues as $validvalue)
+                {
+                    if (in_array($validvalue,$v)) {$displayconditioncheck=true;} # this is  a valid value
+                 }
+                 if (!$displayconditioncheck) {$displaycondition=false;$required_fields_exempt[]=$field["ref"];}
+                #add jQuery code to update on changes
+                    if ($fields[$cf]["type"]==2) # add onchange event to each checkbox field
+                    {
+                        # construct the value from the ticked boxes
+                        # Note: it seems wrong to start with a comma, but this ensures it is treated as a comma separated list by split_keywords(), so if just one item is selected it still does individual word adding, so 'South Asia' is split to 'South Asia','South','Asia'.
+                     $options=trim_array($fields[$cf]["node_options"]);
+                     ?><script type="text/javascript">
+                     jQuery(document).ready(function() {<?php
+                       for ($m=0;$m<count($options);$m++)
+                       {
+                         $checkname=$fields[$cf]["ref"] . "_" . md5($options[$m]);
+                         echo "
+                         jQuery('.Question input[name=\"" . $checkname . "\"]').change(function (){
+                           checkDisplayCondition" . $field["ref"] . "();
+                        });";
+                  }
+                  ?>
+               });
+                     </script><?php
+                  }
+                        # add onChange event to each radio button
+                  else if($fields[$cf]['type'] == 12) {
+
+                    $options = $fields[$cf]['node_options'];?>
+					
+                    <script type="text/javascript">
+                    jQuery(document).ready(function() {
+
+                       <?php
+                       foreach ($options as $option) {
+                         $element_id = 'field_' . $fields[$cf]['ref'] . '_' . sha1($option);
+                         $jquery = sprintf('
+                          jQuery("#%s").change(function() {
+                            checkDisplayCondition%s();
+                         });
+                         ',
+                         $element_id,
+                         $field["ref"]
+                         );
+                         echo $jquery;
+                      } ?>
+
+                   });
+                    </script>
+
+                    <?php
+                 }
+                 else
+                 {
+                  ?>
+                  <script type="text/javascript">
+                  jQuery(document).ready(function() {
+                    jQuery('.Question #field_<?php echo $fields[$cf]["ref"];?>').change(function (){
+
+                       checkDisplayCondition<?php echo $field["ref"];?>();
+
+                    });
+                 });
+                  </script>
+                  <?php
+               }
+            }
+
+            } # see if next field needs to be checked
+
+            $condref++;
+        } # check next condition
+
+        ?>
+        <script type="text/javascript">
+        function checkDisplayCondition<?php echo $field["ref"];?>()
+			{
+			field<?php echo $field["ref"]?>status=jQuery('#question_<?php echo $n ?>').css('display');
+			newfield<?php echo $field["ref"]?>status='none';
+			newfield<?php echo $field["ref"]?>provisional=true;
+			
+			<?php
+			foreach ($scriptconditions as $scriptcondition)
+				{
+				?>
+				newfield<?php echo $field["ref"]?>provisionaltest=false;
+				if (jQuery('.Question #field_<?php echo $scriptcondition["field"]?>').length!=0)
+					{
+					<?php
+					if($scriptcondition['type'] == 12) {
+						?>
+						
+						var options_string = '<?php echo htmlspecialchars($scriptcondition["options"]); ?>';
+						var field<?php echo $scriptcondition["field"]; ?>_options = options_string.split(',');
+						var checked = null;
+						
+						for(var i=0; i < field<?php echo $scriptcondition["field"]; ?>_options.length; i++)
+							{
+							if(jQuery('.Question #field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i]).is(':checked')) 
+								{
+								checked = jQuery('.Question #field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i] + ':checked').val();
+								checked = checked.toUpperCase();
+								}
+							}
+						
+						fieldvalues<?php echo $scriptcondition["field"]?>=checked.split(',');
+						fieldokvalues<?php echo $scriptcondition["field"]; ?> = [<?php echo $scriptcondition["valid"]; ?>];
+
+						if(checked !== null && jQuery.inArray(checked, fieldokvalues<?php echo $scriptcondition["field"]; ?>) > -1) 
+							{
+							newfield<?php echo $field["ref"]; ?>provisionaltest = true;
+							}
+						<?php
+						}
+					else
+						{
+						?>
+						fieldcheck<?php echo $scriptcondition["field"]?>=jQuery('.Question #field_<?php echo $scriptcondition["field"]?>').val().toUpperCase();
+						fieldvalues<?php echo $scriptcondition["field"]?>=fieldcheck<?php echo $scriptcondition["field"]?>.split(',');
+						//alert(fieldvalues<?php echo $scriptcondition["field"]?>);
+						<?php
+						}
+					?>
+					}
+				else
+					{
+					<?php
+
+					# Handle Radio Buttons type: not sure if this is needed here anymore
+					if($scriptcondition['type'] == 12) {
+
+						$scriptcondition["options"] = explode(',', $scriptcondition["options"]);
+
+						foreach ($scriptcondition["options"] as $key => $value) 
+							{
+							$scriptcondition["options"][$key] = sha1($value);
+							}
+
+						$scriptcondition["options"] = implode(',', $scriptcondition["options"]);
+						?>
+						
+						var options_string = '<?php echo $scriptcondition["options"]; ?>';
+						var field<?php echo $scriptcondition["field"]; ?>_options = options_string.split(',');
+						var checked = null;
+						
+						for(var i=0; i < field<?php echo $scriptcondition["field"]; ?>_options.length; i++)
+							{
+							if(jQuery('.Question #field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i]).is(':checked')) 
+								{
+								checked = jQuery('.Question #field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i] + ':checked').val();
+								checked = checked.toUpperCase();
+								}
+							}
+
+						fieldokvalues<?php echo $scriptcondition["field"]; ?> = [<?php echo $scriptcondition["valid"]; ?>];
+
+						if(checked !== null && jQuery.inArray(checked, fieldokvalues<?php echo $scriptcondition["field"]; ?>) > -1) 
+							{
+							newfield<?php echo $field["ref"]; ?>provisionaltest = true;
+							}
+						<?php
+						}
+					?>
+					fieldvalues<?php echo $scriptcondition["field"]?>=new Array();
+					checkedvals<?php echo $scriptcondition["field"]?>=jQuery('.Question input[name^=<?php echo $scriptcondition["field"]?>_]');
+      
+					jQuery.each(checkedvals<?php echo $scriptcondition["field"]?>,function()
+						{
+						if (jQuery(this).is(':checked'))
+							{
+							checktext<?php echo $scriptcondition["field"]?>=jQuery(this).parent().next().text().toUpperCase();
+							checktext<?php echo $scriptcondition["field"]?> = jQuery.trim(checktext<?php echo $scriptcondition["field"]?>);
+							fieldvalues<?php echo $scriptcondition["field"]?>.push(checktext<?php echo $scriptcondition["field"]?>);
+							//alert(fieldvalues<?php echo $scriptcondition["field"]?>);
+							}
+						});
+					}
+		
+				fieldokvalues<?php echo $scriptcondition["field"]?>=new Array();
+				fieldokvalues<?php echo $scriptcondition["field"]?>=[<?php echo $scriptcondition["valid"]?>];
+		
+				jQuery.each(fieldvalues<?php echo $scriptcondition["field"]?>,function(f,v)
+					{
+					//alert("checking value " + fieldvalues<?php echo $scriptcondition["field"]?> + " against " + fieldokvalues<?php echo $scriptcondition["field"]?>);
+					//alert(jQuery.inArray(fieldvalues<?php echo $scriptcondition["field"]?>,fieldokvalues<?php echo $scriptcondition["field"]?>));
+					if ((jQuery.inArray(v,fieldokvalues<?php echo $scriptcondition["field"]?>))>-1 || (fieldvalues<?php echo $scriptcondition["field"]?> ==fieldokvalues<?php echo  $scriptcondition["field"]?>))
+						{
+						newfield<?php echo $field["ref"]?>provisionaltest=true;
+						}
+					});
+
+				if (newfield<?php echo $field["ref"]?>provisionaltest==false)
+					{
+					newfield<?php echo $field["ref"]?>provisional=false;
+					}
+				<?php
+				}
+			?>
+			exemptfieldsval=jQuery('#exemptfields').val();
+			exemptfieldsarr=exemptfieldsval.split(',');
+			
+			if (newfield<?php echo $field["ref"]?>provisional==true)
+				{
+				if (jQuery.inArray(<?php echo $field["ref"]?>,exemptfieldsarr))
+					{
+					exemptfieldsarr.splice(jQuery.inArray(<?php echo $field["ref"]?>, exemptfieldsarr), 1 );
+					}
+				newfield<?php echo $field["ref"]?>status='block';
+				}
+			else
+				{
+				if ((jQuery.inArray(<?php echo $field["ref"]?>,exemptfieldsarr))==-1)
+					{
+					exemptfieldsarr.push(<?php echo $field["ref"]?>);
+					}
+				}
+			jQuery('#exemptfields').val(exemptfieldsarr.join(","));
+
+			if (newfield<?php echo $field["ref"]?>status!=field<?php echo $field["ref"]?>status)
+				{
+				jQuery('#question_<?php echo $n ?>').slideToggle();
+				if (jQuery('#question_<?php echo $n ?>').css('display')=='block')
+					{
+					jQuery('#question_<?php echo $n ?>').css('border-top','');
+					}
+				else
+					{
+					jQuery('#question_<?php echo $n ?>').css('border-top','none');
+					}
+				}
+			}
+		</script>
+		<?php
+return $displaycondition;
+}
 
 function check_access_key($resource,$key)
 	{
@@ -2849,6 +3308,8 @@ function check_access_key($resource,$key)
 	
 	# Option to plugin in some extra functionality to check keys
 	if (hook("check_access_key","",array($resource,$key))===true) {return true;}
+	global $external_share_view_as_internal, $is_authenticated;
+    	if($external_share_view_as_internal && (isset($_COOKIE["user"]) && !(isset($is_authenticated) && $is_authenticated))){return false;} // We want to authenticate the user if not already authenticated so we can show the page as internal
 	
 	$keys=sql_query("select user,usergroup,expires from external_access_keys where resource='$resource' and access_key='$key' and (expires is null or expires>now())");
 
@@ -2876,20 +3337,21 @@ function check_access_key($resource,$key)
 			exit();
 			}
 		
-		global $usergroup,$userpermissions,$userrequestmode,$userfixedtheme,$usersearchfilter;
+		global $usergroup,$userpermissions,$userrequestmode,$usersearchfilter,$external_share_groups_config_options; 
                 $groupjoin="u.usergroup=g.ref";
                 if ($keys[0]["usergroup"]!="")
                     {
                     # Select the user group from the access key instead.
                     $groupjoin="g.ref='" . escape_check($keys[0]["usergroup"]) . "'";
                     }
-		$userinfo=sql_query("select g.ref usergroup,g.permissions,g.fixed_theme,g.search_filter from user u join usergroup g on $groupjoin where u.ref='$user'");
+		$userinfo=sql_query("select g.ref usergroup,g.permissions,g.search_filter,g.config_options,u.search_filter_override from user u join usergroup g on $groupjoin where u.ref='$user'");
 		if (count($userinfo)>0)
 			{
                         $usergroup=$userinfo[0]["usergroup"]; # Older mode, where no user group was specified, find the user group out from the table.
 			$userpermissions=explode(",",$userinfo[0]["permissions"]);
 			$usersearchfilter=$userinfo[0]["search_filter"];
-			if (trim($userinfo[0]["fixed_theme"])!="") {$userfixedtheme=$userinfo[0]["fixed_theme"];} # Apply fixed theme also
+
+            $usersearchfilter=isset($userinfo[0]["search_filter_override"]) && $userinfo[0]["search_filter_override"]!='' ? $userinfo[0]["search_filter_override"] : $userinfo[0]["search_filter"];
 
 			if (hook("modifyuserpermissions")){$userpermissions=hook("modifyuserpermissions");}
 			$userrequestmode=0; # Always use 'email' request mode for external users
@@ -2918,6 +3380,31 @@ function check_access_key($resource,$key)
 				}
 				
 			}
+			
+			if($external_share_groups_config_options || stripos(trim($userinfo[0]["config_options"]),"external_share_groups_config_options=true")!==false)
+				{
+				# Apply config override options
+				$config_options=trim($userinfo[0]["config_options"]);
+				if ($config_options!="")
+					{
+					$co=explode(";",$config_options);
+					foreach($co as $ext_co)
+						{
+						$co_parts=explode("=",$ext_co);
+						
+						if($co_parts[0]!='' && isset($co_parts[1]))
+							{
+							$name=str_replace("$","",$co_parts[0]);
+							$value=ltrim($co_parts[1]); 
+							if(strtolower($value)=='false'){$value=0;}
+							elseif(strtolower($value)=='true'){$value=1;}
+							
+							global $$name;
+							$$name = $value;
+							}
+						}
+					}
+				}
 		
 		# Special case for anonymous logins.
 		# When a valid key is present, we need to log the user in as the anonymous user so they will be able to browse the public links.
@@ -2942,22 +3429,56 @@ function check_access_key($resource,$key)
 		}
 	}
 
-function check_access_key_collection($collection,$key)
-	{
-	if ($collection=="" || !is_numeric($collection)) {return false;}
-	$r=get_collection_resources($collection);
-	if (count($r)==0){return false;}
-	
-	for ($n=0;$n<count($r);$n++)
-		{
-		# Verify a supplied external access key for all resources in a collection
-		if (!check_access_key($r[$n],$key)) {return false;}
-		}	
 
-	# Set the 'last used' date for this key
-	sql_query("update external_access_keys set lastused=now() where collection='$collection' and access_key='$key'");
-	return true;
-	}
+/**
+* Check access key for a collection
+* 
+* @param integer $collection        Collection ID
+* @param string  $key               Access key
+* 
+* @return boolean
+*/
+function check_access_key_collection($collection, $key)
+    {
+    if('' == $collection || !is_numeric($collection))
+        {
+        return false;
+        }
+    
+    global $external_share_view_as_internal;
+    if($external_share_view_as_internal && isset($_COOKIE["user"]))
+        {
+        // We want to authenticate the user so we can show the page as internal
+        return false;
+        }
+
+    $resources = get_collection_resources($collection);
+
+    if(0 == count($resources))
+        {
+        return false;
+        }
+
+    $invalid_resources = array();
+    foreach($resources as $resource_id)
+        {
+        // Verify a supplied external access key for all resources in a collection
+        if(!check_access_key($resource_id, $key))
+            {
+            $invalid_resources[] = $resource_id;
+            }
+        }
+
+    if(count($resources) === count($invalid_resources))
+        {
+        return false;
+        }
+
+    // Set the 'last used' date for this key
+    sql_query("UPDATE external_access_keys SET lastused = now() WHERE collection = '{$collection}' AND access_key = '{$key}'");
+
+    return true;
+    }
 
 function make_username($name)
 	{
@@ -3340,7 +3861,7 @@ function get_nopreview_icon($resource_type,$extension,$col_size,$deprecated1=fal
 		}
 	# Try a plugin
 	$try=hook('plugin_nopreview_icon','',array($resource_type,$col));
-	if (file_exists($folder . $try))
+	if (false !== $try && file_exists($folder . $try))
 		{
 		return $try;
 		}
@@ -3467,47 +3988,50 @@ function filesize_unlimited($path)
     {
     # A resolution for PHP's issue with large files and filesize().
 
-    if (PHP_OS=='WINNT')
+    hook("beforefilesize_unlimited","",array($path));
+
+    if('WINNT' == PHP_OS)
         {
-		if (class_exists("COM"))
-			{
-			try
-				{
-				$filesystem=new COM('Scripting.FileSystemObject');
-				$file=$filesystem->GetFile($path);
-				return $file->Size();
-				}
-			catch (com_exception $e)
-				{
-				return false;
-				}
-			}
+        if(class_exists('COM'))
+            {
+            try
+                {
+                $filesystem = new COM('Scripting.FileSystemObject');
+                $file       =$filesystem->GetFile($path);
 
-		return exec('for %I in (' . escapeshellarg($path) . ') do @echo %~zI' );
+                return $file->Size();
+                }
+            catch(com_exception $e)
+                {
+                return false;
+                }
+            }
+
+        return exec('for %I in (' . escapeshellarg($path) . ') do @echo %~zI' );
         }
-	else if(PHP_OS == 'Darwin') 
-    	{
+    else if('Darwin' == PHP_OS || 'FreeBSD' == PHP_OS)
+        {
         $bytesize = exec("stat -f '%z' " . escapeshellarg($path));
-    	}
+        }
     else 
-    	{
-		$bytesize = exec("stat -c '%s' " . escapeshellarg($path));
-    	}
+        {
+        $bytesize = exec("stat -c '%s' " . escapeshellarg($path));
+        }
 
-	if(!is_int($bytesize))
-		{
-		return @filesize($path); # Bomb out, the output wasn't as we expected. Return the filesize() output.
-		}
-	return $bytesize;
+    if(!is_int($bytesize))
+        {
+        $bytesize = @filesize($path); # Bomb out, the output wasn't as we expected. Return the filesize() output.
+        }
+
+    hook('afterfilesize_unlimited', '', array($path));
+
+    return $bytesize;
     }
 
 function strip_leading_comma($val)
-	{
-    # make sure value is numeric if it can be, i.e. for ratings
-	# not sure if it's ok to remove commas before any value, since they were explicitly added
-	if (is_numeric(str_replace(",","",$val))) {$val=str_replace(",","",$val);}
-	return $val;
-	}	
+    {
+    return preg_replace('/^\,/','',$val);
+    }
 
 // String EnCrypt + DeCrypt function
 // Author: halojoy, July 2006
@@ -3576,20 +4100,8 @@ function decrypt_api_key($key){
 
 // alternative encryption using mcrypt extension
 //from http://php.net/manual/en/function.mcrypt-encrypt.php
-class Cipher {
-    private $securekey, $iv;
-    function __construct($textkey) {
-        $this->securekey = hash('sha256',$textkey,TRUE);
-        $this->iv = mcrypt_create_iv(32,MCRYPT_DEV_URANDOM);
-    }
-    function encrypt($input) {
-        return strtr(base64_encode(mcrypt_encrypt(MCRYPT_RIJNDAEL_256, $this->securekey, $input, MCRYPT_MODE_ECB, $this->iv)), '+/=', '-_,');
-    }
-    function decrypt($input) {
-        return trim(mcrypt_decrypt(MCRYPT_RIJNDAEL_256, $this->securekey, base64_decode(strtr($input, '-_,', '+/=')), MCRYPT_MODE_ECB, $this->iv));
-    }
-}
-    
+// IMPORTANT: temp fix to avoid redeclaring issues. An autoloader should be used instead (currently not available)
+include_once 'classes/Cipher.php';
 
 function purchase_set_size($collection,$resource,$size,$price)
 	{
@@ -3601,10 +4113,10 @@ function purchase_set_size($collection,$resource,$size,$price)
 function payment_set_complete($collection,$emailconfirmation="")
 	{
 	global $applicationname,$baseurl,$userref,$username,$useremail,$userfullname,$email_notify,$lang,$currency_symbol;
-	# Mark items in the collection as paid so they can be downloaded.
+	// Mark items in the collection as paid so they can be downloaded.
 	sql_query("update collection_resource set purchase_complete=1 where collection='$collection'");
 	
-	# For each resource, add an entry to the log to show it has been purchased.
+	// For each resource, add an entry to the log to show it has been purchased.
 	$resources=sql_query("select * from collection_resource where collection='$collection'");
 	$summary="<style>.InfoTable td {padding:5px;}</style><table border=\"1\" class=\"InfoTable\"><tr><td><strong>" . $lang["property-reference"] . "</strong></td><td><strong>" . $lang["size"] . "</strong></td><td><strong>" . $lang["price"] . "</strong></td></tr>";
 	foreach ($resources as $resource)
@@ -3615,16 +4127,38 @@ function payment_set_complete($collection,$emailconfirmation="")
 		$summary.="<tr><td>" . $resource["resource"] . "</td><td>" . $purchasesize . "</td><td>" . $currency_symbol . $resource["purchase_price"] . "</td></tr>";
 		}
 	$summary.="</table>";
-	# Send email to admin
+	// Send email or notification to admin
 	$message=$lang["purchase_complete_email_admin_body"] . "<br>" . $lang["username"] . ": " . $username . "(" . $userfullname . ")<br>" . $summary . "<br><br>$baseurl/?c=" . $collection . "<br>";
-	send_mail($email_notify,$applicationname . ": " . $lang["purchase_complete_email_admin"],$message);
+	$notificationmessage=$lang["purchase_complete_email_admin_body"] . "\r\n" . $lang["username"] . ": " . $username . "(" . $userfullname . ")";
+	$notify_users=get_notification_users("RESOURCE_ACCESS"); 
+	$message_users=array();
+	foreach($notify_users as $notify_user)
+			{
+			get_config_option($notify_user['ref'],'user_pref_resource_access_notifications', $send_message);		  
+            if($send_message==false){continue;}		
+			
+			get_config_option($notify_user['ref'],'email_user_notifications', $send_email);    
+			if($send_email && $notify_user["email"]!="")
+				{
+				send_mail($notify_user["email"],$applicationname . ": " . $lang["purchase_complete_email_admin"],$message);
+				}        
+			else
+				{
+				$message_users[]=$notify_user["ref"];
+				}
+			}
+			
+	if (count($message_users)>0)
+		{		
+        message_add($message_users,$notificationmessage,$baseurl . "/?c=" . $collection,$userref);
+		}	
 	
-	#Send email to user
+	// Send email to user (not a notification as may need to be kept for reference)
 	$confirmation_address=($emailconfirmation!="")?$emailconfirmation:$useremail;	
 	$userconfirmmessage= $lang["purchase_complete_email_user_body"] . $summary . "<br><br>$baseurl/?c=" . $collection . "<br>";
 	send_mail($useremail,$applicationname . ": " . $lang["purchase_complete_email_user"] ,$userconfirmmessage);
 	
-	# Rename so that can be viewed on my purchases page
+	// Rename so that can be viewed on my purchases page
 	sql_query("update collection set name= '" . date("Y-m-d H:i") . "' where ref='$collection'");
 	
 	return true;
@@ -3905,6 +4439,39 @@ function format_display_field($value){
 	return $string;
 }
 
+// formats a string with a collapsible more / less section
+function format_string_more_link($string,$max_words_before_more=-1)
+    {
+    $words=preg_split('/[\t\f ]/',$string);
+    if ($max_words_before_more==-1)
+        {
+        global $max_words_before_more;
+        }
+    if (count($words) < $max_words_before_more)
+        {
+        return $string;
+        }
+    global $lang;
+    $unique_id=uniqid();
+    $return_value = "";
+    for ($i=0; $i<count($words); $i++)
+        {
+        if ($i>0)
+            {
+            $return_value .= ' ';
+            }
+        if ($i==$max_words_before_more)
+            {
+            $return_value .= '<a id="' . $unique_id . 'morelink" href="#" onclick="jQuery(\'#' . $unique_id . 'morecontent\').show(); jQuery(this).hide();">' .
+                strtoupper($lang["action-more"]) . ' &gt;</a><span id="' . $unique_id . 'morecontent" style="display:none;">';
+            }
+        $return_value.=$words[$i];
+        }
+    $return_value .= ' <a href="#" onclick="jQuery(\'#' . $unique_id . 'morelink\').show(); jQuery(\'#' . $unique_id . 'morecontent\').hide();">&lt; ' .
+        strtoupper($lang["action-less"]) . '</a></span>';
+    return $return_value;
+    }
+
 // found multidimensional array sort function to support the performance footer
 // http://www.php.net/manual/en/function.sort.php#104464
  function sortmulti ($array, $index, $order, $natsort=FALSE, $case_sensitive=FALSE) {
@@ -3964,7 +4531,7 @@ function draw_performance_footer(){
 		}
 	?>
 	<tr><td>Dupes</td><td><?php echo $dupes?></td></tr>
-	<tr><td colspan=2><a href="#" onClick="document.getElementById('querylog<?php echo $performance_footer_id?>').style.display='block';return false;">&gt;&nbsp;details</a></td></tr>
+	<tr><td colspan=2><a href="#" onClick="document.getElementById('querylog<?php echo $performance_footer_id?>').style.display='block';return false;"><?php echo LINK_CARET ?>details</a></td></tr>
 	</table>
 	<table class="InfoTable" id="querylog<?php echo $performance_footer_id?>" style="display: none; float: <?php if ($pagename=='collections'){?>left<?php } else {?>right<?php }?>; margin: 10px;">
 	<?php
@@ -4073,7 +4640,7 @@ function get_utility_path($utilityname, &$checked_path = null)
             if ($return===false)
                 {
                 # Support 'avconv' also
-                return get_executable_path($ffmpeg_path, array("unix"=>"avconv", "win"=>"avconv.exe"), $checked_path);
+                return get_executable_path($ffmpeg_path, array("unix"=>"avprobe", "win"=>"avprobe.exe"), $checked_path);
                 }
             else { return $return; }
             break;        
@@ -4234,6 +4801,8 @@ function rs_setcookie($name, $value, $daysexpire = 0, $path = "", $domain = "", 
     # Note! The argument $daysexpire is not the same as the argument $expire in the PHP internal function setcookie.
     # Note! The $path argument is not used if $global_cookies = true
 
+    if (php_sapi_name()=="cli") {return true;} # Bypass when running from the command line (e.g. for the test scripts).
+    
     global $baseurl_short, $global_cookies;
     if ($daysexpire==0) {$expire = 0;}
     else {$expire = time() + (3600*24*$daysexpire);}
@@ -4324,7 +4893,7 @@ function get_resource_type_fields($restypes="", $field_order_by="ref", $field_so
 			{
 			$conditionsql.=" where ( ";
 			}
-		$conditionsql.=" name like '%" . $find . "%' or options like '%" . $find . "%'or title like '%" . $find . "%'or tab_name like '%" . $find . "%'or exiftool_field like '%" . $find . "%'or help_text like '%" . $find . "%'or ref like '%" . $find . "%'or tooltip_text like '%" .$find . "%' or display_template like '%" .$find . "%')";
+		$conditionsql.=" name like '%" . $find . "%' or title like '%" . $find . "%' or tab_name like '%" . $find . "%' or exiftool_field like '%" . $find . "%' or help_text like '%" . $find . "%' or ref like '%" . $find . "%' or tooltip_text like '%" .$find . "%' or display_template like '%" .$find . "%')";
 		}
 	// Allow for sorting, enabled for use by System Setup pages
 	//if(!in_array($field_order_by,array("ref","name","tab_name","type","order_by","keywords_index","resource_type","display_field","required"))){$field_order_by="ref";}		
@@ -4365,18 +4934,29 @@ function notify_resource_change($resource)
 		}
 		
 	debug("notify_resource_change - checking for users that have downloaded this resource " . $resource);
-	$download_users=sql_array("select u.email value from resource_log rl left join user u on rl.user=u.ref where rl.type='d' and rl.resource=$resource and u.email<>'' and datediff(now(),date)<'$notify_on_resource_change_days'","");
-	
+	$download_users=sql_query("select u.ref, u.email from resource_log rl left join user u on rl.user=u.ref where rl.type='d' and rl.resource=$resource and datediff(now(),date)<'$notify_on_resource_change_days'","");
+	$message_users=array();
 	if(count($download_users>0))
 		{
 		global $applicationname, $lang, $baseurl;
 		foreach ($download_users as $download_user)
 			{
-			if($download_user!="")
-				{
-				//send_mail($email,$subject,$message,$from="",$reply_to="",$html_template="",$templatevars=null,$from_name="",$cc="",$bcc="")
-				send_mail($download_user,$applicationname . ": " . $lang["notify_resource_change_email_subject"],str_replace(array("[days]","[url]"),array($notify_on_resource_change_days,$baseurl . "/?r=" . $resource),$lang["notify_resource_change_email"]),"","",array("days"=>$notify_on_resource_change_days,"url"=>$baseurl . "/?r=" . $resource));
-				}
+			get_config_option($download_user['ref'],'user_pref_resource_notifications', $send_message);		  
+            if($send_message==false){continue;}		
+			
+            get_config_option($download_user['ref'],'email_user_notifications', $send_email);
+            if($send_email && $download_user["email"]!="")
+                {
+                send_mail($download_user['email'],$applicationname . ": " . $lang["notify_resource_change_email_subject"],str_replace(array("[days]","[url]"),array($notify_on_resource_change_days,$baseurl . "/?r=" . $resource),$lang["notify_resource_change_email"]),"","",'notify_resource_change_email',array("days"=>$notify_on_resource_change_days,"url"=>$baseurl . "/?r=" . $resource));
+                }
+            else
+                {
+				$message_users[]=$download_user["ref"];
+                }
+			}
+		if (count($message_users)>0)
+			{
+            message_add($message_users,str_replace(array("[days]","[url]"),array($notify_on_resource_change_days,$baseurl . "/?r=" . $resource),$lang["notify_resource_change_notification"]),$baseurl . "/?r=" . $resource);
 			}
 		}
 	}
@@ -4553,3 +5133,352 @@ if(!function_exists("array_column"))
         return array_map(function($element) use($column_name){return $element[$column_name];}, $array);
     }
 }
+
+
+/**
+* Get data for each image that should be used on the slideshow.
+* The format of the returned array should be: 
+* Array
+* (
+*   [1] => Array
+*         (
+*             [file_path] => /var/www/include/../gfx/homeanim/gfx/1.jpg
+*             [checksum] => 1450107521
+*             [link] => http://localhost/pages/view.php?ref=6019
+*             [link_file_path] => /var/www/include/../gfx/homeanim/gfx/1.txt
+*         )
+*   [2] => Array
+*        (
+*            [file_path] => /var/www/include/../gfx/homeanim/gfx/2.jpg
+*            [checksum] => 2900215034
+*        )
+*   [3] => Array
+*        (
+*            [file_path] => /var/www/include/../gfx/homeanim/gfx/3.jpg
+*            [checksum] => 4350322559
+*        )
+* )
+* 
+* @return array
+*/
+function get_slideshow_files_data()
+    {
+    global $baseurl, $homeanim_folder;
+
+    $dir = dirname(__FILE__) . '/../' . $homeanim_folder;
+    $d   = scandir($dir);
+    sort($d, SORT_NUMERIC);
+
+    $filecount       = 0;
+    $checksum        = 0;
+    $slideshow_files = array();
+
+    foreach($d as $file)
+        {
+        if(preg_match("/[0-9]+\.(jpg)$/", $file))
+            {
+            $filecount++;
+            $slideshow_file_id = substr($file, 0, -4);
+            $checksum += filemtime($dir . '/' . $file);
+
+            $slideshow_files[$slideshow_file_id] = array();
+            $slideshow_files[$slideshow_file_id]['file_path'] = $dir . '/' . $file;
+            $slideshow_files[$slideshow_file_id]['checksum']  = $checksum;
+
+            $linkref        = '';
+            $linkfile       = substr($file, 0, (strlen($file) - 4)) . '.txt';
+            $link_file_path = $dir . '/' . $linkfile;
+
+            if(file_exists($link_file_path))
+                {
+                $linkref    = file_get_contents($link_file_path);
+                $linkaccess = get_resource_access($linkref);
+                if('' !== $linkaccess && (0 == $linkaccess || 1 == $linkaccess))
+                    {
+                    $slideshow_files[$slideshow_file_id]['link'] = $baseurl . "/pages/view.php?ref=" . $linkref;
+                    $slideshow_files[$slideshow_file_id]['link_file_path'] = $link_file_path;
+                    }
+                }
+            }
+        }
+
+    return $slideshow_files;
+    }
+
+	
+	
+function get_notification_users($userpermission="SYSTEM_ADMIN")
+    {
+    // Returns an array of users (refs and emails) for use when sending email notifications (messages that in the past went to $email_notify, which can be emulated by using $email_notify_usergroups)
+	// Can be passed a specific user type or an array of permissions
+	// Types supported:-
+	// SYSTEM_ADMIN
+	// RESOURCE_ACCESS
+	// RESEARCH_ADMIN
+	// USER_ADMIN
+    // RESOURCE_ADMIN
+	
+    global $notification_users_cache, $usergroup,$email_notify_usergroups;
+	$userpermissionindex=is_array($userpermission)?implode("_",$userpermission):$userpermission;
+    if(isset($notification_users_cache[$userpermissionindex]))
+        {return $notification_users_cache[$userpermissionindex];}
+        
+    if(is_array($email_notify_usergroups) && count($email_notify_usergroups)>0)
+		{
+		// If email_notify_usergroups is set we use these over everything else, as long as they have an email address set
+        $notification_users_cache[$userpermissionindex] = sql_query("select ref, email from user where usergroup in (" . implode(",",$email_notify_usergroups) . ") and email <>''");
+        return $notification_users_cache[$userpermissionindex];
+		}
+	
+	if(!is_array($userpermission))
+		{
+		// We have been passed a specific type of administrator to find 
+		switch($userpermission)
+			{
+			case "USER_ADMIN";
+			// Return all users in groups with u permissions AND either no 'U' restriction, or with 'U' but in appropriate group
+			$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where find_in_set(binary 'u',ug.permissions) <> 0 and u.ref<>''" . (is_int($usergroup)?" and (find_in_set(binary 'U',ug.permissions) = 0 or ug.ref =(select parent from usergroup where ref=" . $usergroup . "))":""));	
+			return $notification_users_cache[$userpermissionindex];
+			break;
+			
+			case "RESOURCE_ACCESS";
+			// Notify users who can grant access to resources, get all users in groups with R permissions
+			$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where find_in_set(binary 'R',ug.permissions) <> 0");	
+			return $notification_users_cache[$userpermissionindex];		
+			break;
+			
+			case "RESEARCH_ADMIN";
+			// Notify research admins, get all users in groups with r permissions
+			$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where find_in_set(binary 'r',ug.permissions) <> 0");	
+			return $notification_users_cache[$userpermissionindex];		
+			break;
+					
+			case "RESOURCE_ADMIN";
+			// Get all users in groups with t and e0 permissions
+			$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where find_in_set(binary 't',ug.permissions) <> 0 and find_in_set(binary 'e0',ug.permissions)");	
+			return $notification_users_cache[$userpermissionindex];
+			break;
+            
+            case "SYSTEM_ADMIN";
+			default;
+			// Get all users in groups with a permission (default if incorrect admin type has been passed)
+			$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where find_in_set(binary 'a',ug.permissions) <> 0");	
+			return $notification_users_cache[$userpermissionindex];
+			break;
+		
+			}
+		}
+	else
+		{
+		// An array has been passed, find all users with these permissions
+		$condition="";
+		foreach ($userpermission as $permission)
+			{
+			if($condition!=""){$condition.=" and ";}
+			$condition.="find_in_set(binary '" . $permission . "',ug.permissions) <> 0";
+			}
+		$notification_users_cache[$userpermissionindex] = sql_query("select u.ref, u.email from usergroup ug join user u on u.usergroup=ug.ref where $condition");	
+		return $notification_users_cache[$userpermissionindex];
+		}
+	}
+        
+function form_value_display($row,$name,$default="")
+    {
+    # Returns a sanitised row from the table in a safe form for use in a form value, suitable overwritten by POSTed data if it has been supplied.
+    if (array_key_exists($name,$row)) {$default=$row[$name];}
+    return htmlspecialchars(getval($name,$default));
+    }
+
+function get_download_filename($ref,$size,$alternative,$ext)
+	{
+	# Constructs a filename for download
+	global $original_filenames_when_downloading,$download_filenames_without_size,$download_id_only_with_size,$download_filename_id_only,$download_filename_field,$prefix_resource_id_to_filename,$filename_field,$prefix_filename_string;
+	
+	$filename = $ref . $size . ($alternative>0?"_" . $alternative:"") . "." . $ext;
+	
+	if ($original_filenames_when_downloading)
+		{
+		# Use the original filename.
+		if ($alternative>0)
+			{
+			# Fetch from the resource_alt_files alternatives table (this is an alternative file)
+			$origfile=get_alternative_file($ref,$alternative);
+			$origfile=$origfile["file_name"];
+			}
+		else
+			{
+			# Fetch from field data or standard table	
+			$origfile=get_data_by_field($ref,$filename_field);	
+			}
+		if (strlen($origfile)>0)
+			{
+			# do an extra check to see if the original filename might have uppercase extension that can be preserved.	
+			$pathparts=pathinfo($origfile);
+			if (isset($pathparts['extension'])){
+				if (strtolower($pathparts['extension'])==$ext){$ext=$pathparts['extension'];}	
+			} 
+			
+			# Use the original filename if one has been set.
+			# Strip any path information (e.g. if the staticsync.php is used).
+			# append preview size to base name if not the original
+			if($size != '' && !$download_filenames_without_size)
+				{
+				$filename = strip_extension(mb_basename($origfile)) . '-' . $size . '.' . $ext;
+				}
+			else
+				{
+				$filename = strip_extension(mb_basename($origfile)) . '.' . $ext;
+				}
+
+			if($prefix_resource_id_to_filename)
+				{
+				$filename = $prefix_filename_string . $ref . "_" . $filename;
+				}
+			}
+		}
+
+	if ($download_filename_id_only){
+		if(!hook('customdownloadidonly', '', array($ref, $ext, $alternative))) {
+			$filename=$ref . "." . $ext;
+
+			if($size != '' && $download_id_only_with_size) {
+				$filename = $ref . '-' . $size . '.' . $ext;
+			}
+
+			if(isset($prefix_filename_string) && trim($prefix_filename_string) != '') {
+				$filename = $prefix_filename_string . $filename;
+			}
+
+		}
+	}
+	
+	if (isset($download_filename_field))
+		{
+		$newfilename=get_data_by_field($ref,$download_filename_field);
+		if ($newfilename)
+			{
+			$filename = trim(nl2br(strip_tags($newfilename)));
+			if($size != "" && !$download_filenames_without_size)
+				{
+				$filename = substr($filename, 0, 200) . '-' . $size . '.' . $ext;
+				}
+			else
+				{
+				$filename = substr($filename, 0, 200) . '.' . $ext;
+				}
+
+			if($prefix_resource_id_to_filename)
+				{
+				$filename = $prefix_filename_string . $ref . '_' . $filename;
+				}
+			}
+		}
+
+	# Remove critical characters from filename
+	$altfilename=hook("downloadfilenamealt");
+	if(!($altfilename)) $filename = preg_replace('/:/', '_', $filename);
+	else $filename=$altfilename;
+
+    hook("downloadfilename");
+	return $filename;
+	}
+
+function job_queue_add($type="",$job_data=array(),$user="",$time="", $success_text="", $failure_text="", $job_code="")
+	{
+	// Adds a job to the job_queue table.
+	if($time==""){$time=date('Y-m-d H:i:s');}
+	if($type==""){return false;}
+	if($user==""){global $userref;$user=isset($userref)?$userref:0;}
+    $job_data_json=json_encode($job_data,JSON_UNESCAPED_SLASHES); // JSON_UNESCAPED_SLASHES is needed so we can effectively compare jobs
+    // Check for existing job matching
+    $existing_user_jobs=job_queue_get_jobs($type,STATUS_ACTIVE,"",$job_code);
+	if(count($existing_user_jobs)>0)
+            {
+            global $lang;
+            return $lang["job_queue_duplicate_message"];
+            }
+	sql_query("insert into job_queue (type,job_data,user,start_date,status,success_text,failure_text,job_code) values('" . escape_check($type) . "','" . escape_check($job_data_json) . "','" . $user . "','" . $time . "','" . STATUS_ACTIVE .  "','" . $success_text . "','" . $failure_text . "','" . escape_check($job_code) . "')");
+    return true;
+	}
+	
+function job_queue_update($ref,$job_data=array(),$newstatus="", $newtime="")
+	{
+	$sql="update  job_queue set job_data='" . escape_check(json_encode($job_data)) . "'";
+	if($newtime!=""){$sql.=",start_date='" . $newtime . "'";}
+	if($newstatus!=""){$sql.=",status='" . $newstatus . "'";}
+	$sql.=" where ref='" . $ref . "'";
+	sql_query($sql);
+	}
+
+function job_queue_delete($ref)
+	{
+	sql_query("delete from job_queue where ref='" . $ref . "'");
+	}
+
+function job_queue_get_jobs($type="", $status="", $user="", $job_code="", $job_order_by="ref", $job_sort="desc", $find="")
+	{
+	// Gets offline jobs
+	$condition=array();
+	if($type!=""){$condition[] = " type ='" . escape_check($type) . "'";}
+	if($status!=""){$condition[] =" status ='" . escape_check($status) . "'";}
+	if($user!=""){$condition[] =" user ='" . escape_check($user) . "'";}
+	if($job_code!=""){$condition[] =" job_code ='" . escape_check($job_code) . "'";}
+	if($find!="")
+		{
+		$find=escape_check($find);
+		$condition[] = " (j.ref like '%" . $find . "%'  or j.job_data like '%" . $find . "%' or j.success_text like '%" . $find . "%' or j.failure_text like '%" . $find . "%' or j.user like '%" . $find . "%' or u.username like '%" . $find . "%' or u.fullname like '%" . $find . "%')";
+		}
+	$conditional_sql="";
+	if (count($condition)>0){$conditional_sql=" where " . implode(" and ",$condition);}
+		
+	$sql = "select j.ref,j.type,j.job_data,j.user,j.status, j.start_date, j.success_text, j.failure_text,j.job_code, u.username, u.fullname from job_queue j left join user u on u.ref=j.user " . $conditional_sql . " order by " . escape_check($job_order_by) . " " . escape_check($job_sort);
+	$jobs=sql_query($sql);
+	return $jobs;
+	}
+	
+function job_queue_run_job($job)
+	{
+	// Runs offline job using defined job handler
+	$jobref = $job["ref"];
+	$job_data=json_decode($job["job_data"], true);
+	$jobuser = $job["user"];
+    $job_success_text=$job["success_text"];
+	$job_failure_text=$job["failure_text"];
+	
+	if(is_process_lock('job_' . $jobref)){return;}
+	set_process_lock('job_' . $jobref);
+	
+	$logmessage =  " - Running job #" . $jobref . PHP_EOL;
+	echo $logmessage;
+	debug($logmessage);
+	
+	$logmessage =  " - Looking for " . __DIR__ . "/job_handlers/" . $job["type"] . ".php" . PHP_EOL;
+	echo $logmessage;
+	debug($logmessage);
+		
+	if (file_exists(__DIR__ . "/job_handlers/" . $job["type"] . ".php"))
+		{
+		$logmessage="Attempting to run job #" . $jobref . " using handler " . $job["type"]. PHP_EOL;
+		echo $logmessage;
+		debug($logmessage);
+		include __DIR__ . "/job_handlers/" . $job["type"] . ".php";
+		}
+	else
+		{
+		$logmessage="Unable to find handlerfile: " . $job["type"]. PHP_EOL;
+		echo $logmessage;
+		debug($logmessage);
+		job_queue_update($jobref,$job_data,STATUS_ERROR);
+		}
+	
+	$logmessage =  " - Finished job #" . $jobref . PHP_EOL;
+	echo $logmessage;
+	debug($logmessage);
+	
+	clear_process_lock('job_' . $jobref);
+	}
+        
+function user_set_usergroup($user,$usergroup)
+    {
+    sql_query("update user set usergroup='" . escape_check($usergroup) . "' where ref='" . escape_check($user) . "'");
+    }

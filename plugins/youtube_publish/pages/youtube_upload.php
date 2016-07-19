@@ -1,6 +1,6 @@
 <?php
 include "../../../include/db.php";
-include "../../../include/general.php";
+include_once "../../../include/general.php";
 include "../../../include/authenticate.php";
 include "../../../include/search_functions.php";
 include "../../../include/resource_functions.php";
@@ -40,9 +40,9 @@ $video_category = getvalescaped("video_category",""); // This is the uploading v
 if ($youtube_publish_url_field>0){$youtube_url=sql_value("select value from resource_data where resource='$ref' and resource_type_field=$youtube_publish_url_field", "");}
 $youtube_error=false;
 
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);
 
 if ($youtube_publish_client_id=="" || $youtube_publish_client_secret=="")
 		{
@@ -190,11 +190,11 @@ return false ;
 </script>
 
 
-<a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo $ref?>&search=<?php echo urlencode($search)?>&offset=<?php echo $offset?>&order_by=<?php echo $order_by?>&sort=<?php echo $sort?>&archive=<?php echo $archive?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a></p>
+<a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo $ref?>&search=<?php echo urlencode($search)?>&offset=<?php echo $offset?>&order_by=<?php echo $order_by?>&sort=<?php echo $sort?>&archive=<?php echo $archive?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a></p>
 
 
 <div class="backtoresults">
-<a class="prevLink" href="<?php echo $baseurl_short?>plugins/youtube_publish/pages/youtube_upload.php?ref=<?php echo $ref?>&search=<?php echo urlencode($search)?>&offset=<?php echo $offset?>&order_by=<?php echo $order_by?>&sort=<?php echo $sort?>&archive=<?php echo $archive?>&go=previous&<?php echo hook("nextpreviousextraurl") ?>" onClick="return CentralSpaceLoad(this);">&lt;&nbsp;<?php echo $lang["previousresult"]?></a>
+<a class="prevLink" href="<?php echo $baseurl_short?>plugins/youtube_publish/pages/youtube_upload.php?ref=<?php echo $ref?>&search=<?php echo urlencode($search)?>&offset=<?php echo $offset?>&order_by=<?php echo $order_by?>&sort=<?php echo $sort?>&archive=<?php echo $archive?>&go=previous&<?php echo hook("nextpreviousextraurl") ?>" onClick="return CentralSpaceLoad(this);"><?php echo LINK_CARET_BACK ?><?php echo $lang["previousresult"]?></a>
 <?php 
 hook("viewallresults");
 ?>

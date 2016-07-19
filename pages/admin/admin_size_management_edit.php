@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 
 if (!checkperm("a"))
@@ -25,9 +25,9 @@ if ($new_size_id!="")
 	exit;
 	}
 
-$ref=getval("ref","");
+$ref = getvalescaped('ref', '');
 
-if (!sql_value("select ref as value from preview_size where ref='{$ref}' and internal<>'1'",false))		// note that you are not allowed to edit internal sizes
+if (!sql_value("select ref as value from preview_size where ref='{$ref}' and internal<>'1'",false) && !$internal_preview_sizes_editable)		// note that you are not allowed to edit internal sizes without $internal_preview_sizes_editable=true
 	{
 	redirect("{$baseurl_short}pages/admin/admin_size_management.php?{$url_params}");		// fail safe by returning to the size management page if duff ref passed
 	exit;
@@ -53,6 +53,19 @@ if (getval("save",false))
 
 	$height=getvalescaped("height",-1,true);
 	if ($height>=0) $cols["height"]=$height;
+	
+	if($preview_quality_unique)
+		{
+		$quality=getvalescaped("quality",0,true);
+		if($quality>0 && $quality<=100)
+			{
+			$cols["quality"]=$quality;
+			}
+		else
+			{
+			$cols["quality"]=$imagemagick_quality;	
+			}
+		}
 
 	$cols["padtosize"]=(getval('padtosize',false) ? "1" : "0");
 	$cols["allow_preview"]=(getval('allowpreview',false) ? "1" : "0");
@@ -88,7 +101,7 @@ include "../../include/header.php";
 	<div class="BasicsBox">
 
 	<p>
-		<a href="" onclick="return CentralSpaceLoad('<?php echo $baseurl_short; ?>pages/admin/admin_size_management.php?<?php echo $url_params; ?>',true);">&lt;&nbsp;<?php echo $lang['page-title_size_management']; ?></a>
+		<a href="" onclick="return CentralSpaceLoad('<?php echo $baseurl_short; ?>pages/admin/admin_size_management.php?<?php echo $url_params; ?>',true);"><?php echo LINK_CARET_BACK ?><?php echo $lang['page-title_size_management']; ?></a>
 	</p>
 
 	<h1><?php echo $lang['page-title_size_management_edit']; ?></h1>
@@ -119,6 +132,19 @@ include "../../include/header.php";
 			<input name="height" type="text" class="shrtwidth" value="<?php echo $record['height']; ?>">
 			<div class="clearerleft"></div>
 		</div>
+		
+		<?php
+		if($preview_quality_unique)
+			{
+			?>
+			<div class="Question">
+				<label><?php echo $lang["property-quality"]; ?></label>
+				<input name="quality" type="text" class="shrtwidth" value="<?php echo($record['quality']!=''?$record['quality']:$imagemagick_quality)?>">
+				<div class="clearerleft"></div>
+			</div>
+			<?php
+			}
+		?>
 
 		<div class="Question">
 			<label><?php echo $lang['property-pad_to_size']; ?></label>
@@ -137,12 +163,19 @@ include "../../include/header.php";
 			<input name="allowrestricted" type="checkbox" value="1"<?php if($record['allow_restricted']) {?> checked="checked"<?php }?>>
 			<div class="clearerleft"></div>
 		</div>
-
-		<div class="Question">
-			<label><?php echo $lang["fieldtitle-tick_to_delete_size"]?></label>
-			<input name="deleteme" type="checkbox" value="1">
-			<div class="clearerleft"></div>
-		</div>
+		
+		<?php
+		if(!$record['internal'])
+			{
+			?>
+			<div class="Question">
+				<label><?php echo $lang["fieldtitle-tick_to_delete_size"]?></label>
+				<input name="deleteme" type="checkbox" value="1">
+				<div class="clearerleft"></div>
+			</div>
+			<?php
+			}
+		?>
 
 		<div class="QuestionSubmit">
 			<label for="buttonsave"></label>

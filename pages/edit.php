@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; 
 include "../include/resource_functions.php";
 include_once "../include/collections_functions.php";
@@ -17,16 +17,20 @@ $order_by=getvalescaped("order_by","relevance");
 $offset=getvalescaped("offset",0,true);
 $restypes=getvalescaped("restypes","");
 if (strpos($search,"!")!==false) {$restypes="";}
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);
 $modal=(getval("modal","")=="true");
+$single=getval("single","")!="" || getval("forcesingle","")!="";
 
 $archive=getvalescaped("archive",0,true); // This is the archive state for searching, NOT the archive state to be set from the form POST which we get later
   
 $uploadparams="";
 $uploadparams.="&relateto=" . urlencode(getval("relateto",""));
 $uploadparams.="&redirecturl=" . urlencode(getval("redirecturl",""));
+
+$collection     = getvalescaped('collection', '', true);
+$collection_add = getvalescaped('collection_add', '');
 
 global $merge_filename_with_title;
 if($merge_filename_with_title && $ref < 0) {
@@ -130,6 +134,14 @@ if ($ref<0 && $resource_type!="" && $resource_type!=$resource["resource_type"] &
   $resource["resource_type"]=$resource_type;
   }
 
+if(in_array($resource['resource_type'], $data_only_resource_types))
+     {
+     $single=true;
+     }
+else
+  {
+  $uploadparams = str_replace(array('&forcesingle=true','&noupload=true'), array(''),$uploadparams); 
+  }
 $setarchivestate = getvalescaped('status', $resource["archive"], TRUE);
 
 # Allow alternative configuration settings for this resource type.
@@ -167,7 +179,8 @@ if (getval("regenexif","")!="")
 $is_template=(isset($metadata_template_resource_type) && $resource["resource_type"]==$metadata_template_resource_type);
 
 # check for upload disabled due to space limitations...
-if ($ref<0 && isset($disk_quota_limit_size_warning_noupload)){
+if ($ref<0 && isset($disk_quota_limit_size_warning_noupload))
+  {
 	# check free space
 	if (isset($disksize)){ # Use disk quota rather than real disk size
 		$avail=$disksize*(1024*1024*1024);
@@ -190,7 +203,7 @@ if ($ref<0 && isset($disk_quota_limit_size_warning_noupload)){
 		$explain=$baseurl_short."pages/no_uploads.php";
 		redirect($explain);
 	}
-}
+  }
 
 hook("editbeforeheader");
 
@@ -199,122 +212,142 @@ hook("editbeforeheader");
 # -----------------------------------
 
 if ((getval("autosave","")!="") || (getval("tweak","")=="" && getval("submitted","")!="" && getval("resetform","")=="" && getval("copyfrom","")==""))
-{
-
-  if(($embedded_data_user_select && getval("exif_option","")=="custom") || isset($embedded_data_user_select_fields))  
   {
+  if(($embedded_data_user_select && getval("exif_option","")=="custom") || isset($embedded_data_user_select_fields))  
+    {
     $exif_override=false;
     foreach($_POST as $postname=>$postvar)
-    {
-      if (strpos($postname,"exif_option_")!==false)
       {
+      if (strpos($postname,"exif_option_")!==false)
+        {
         $uploadparams.="&" . urlencode($postname) . "=" . urlencode($postvar);
         $exif_override=true;
-     }
-  }
-  if($exif_override)
-  {
-   $uploadparams.="&exif_override=true";
-}
-}
+        }
+      }
+    if($exif_override)
+      {
+      $uploadparams.="&exif_override=true";
+      }
+    }
 
-hook("editbeforesave");         
-
-    # save data
-if (!$multiple)
-{
-         # When auto saving, pass forward the field so only this is saved.
-         $autosave_field=getvalescaped("autosave_field","");
+  hook("editbeforesave");         
+  
+  # save data
+  if (!$multiple)
+      {
+      # When auto saving, pass forward the field so only this is saved.
+      $autosave_field=getvalescaped("autosave_field","");
          
-        # Upload template: Change resource type
- $resource_type=getvalescaped("resource_type","");
-        if ($resource_type!="" && !checkperm("XU{$resource_type}") && $autosave_field=="")     // only if resource specified and user has permission for that resource type
+      # Upload template: Change resource type
+      $resource_type=getvalescaped("resource_type","");
+      if ($resource_type!="" && !checkperm("XU{$resource_type}") && $autosave_field=="")     // only if resource specified and user has permission for that resource type
         {
-         update_resource_type($ref,$resource_type);
-            $resource=get_resource_data($ref,false); # Reload resource data.
-         }       
-
-
+        update_resource_type($ref,$resource_type);
+        $resource=get_resource_data($ref,false); # Reload resource data.
+        if(in_array($resource['resource_type'], $data_only_resource_types))
+            {
+            $single=true;
+            }
+       else
+          {
+          $uploadparams = str_replace(array('&forcesingle=true','&noupload=true'), array(''),$uploadparams); 
+          }
+        }       
          
-         # Perform the save
-         $save_errors=save_resource_data($ref,$multiple,$autosave_field);
+       # Perform the save
+       $save_errors=save_resource_data($ref,$multiple,$autosave_field);
          
-         if($embedded_data_user_select)
+       if($embedded_data_user_select)
          {
-            $no_exif=getval("exif_option","");
+         $no_exif=getval("exif_option","");
          }
-         else
+       else
          {
-            $no_exif=getval("no_exif","");
+         $no_exif=getval("no_exif","");
          }
 
-         if($relate_on_upload && $enable_related_resources && getval("relateonupload","")!="") {
-            $uploadparams.="&relateonupload=yes";
-         }
+       if($relate_on_upload && $enable_related_resources && getval("relateonupload","")!="")
+          {
+          $uploadparams.="&relateonupload=yes";
+          }
+        $autorotate = getval("autorotate","");
 
-         $autorotate = getval("autorotate","");
-
-         if ($upload_collection_name_required){
-            if (getvalescaped("entercolname","")=="" && getval("collection_add","")==-1){ 
+        if ($upload_collection_name_required)
+            {
+            if (getvalescaped("entercolname","")=="" && getval("collection_add","")==-1)
+              { 
               if (!is_array($save_errors)){$save_errors=array();} 
               $save_errors['collectionname']=$lang["requiredfield"];
-           }
-        }       
+              }
+           }       
 
         if (($save_errors===true || $is_template)&&(getval("tweak","")==""))
-        {           
-         if ($ref>0 && getval("save","")!="")
-         {
-                # Log this
-           daily_stat("Resource edit",$ref);
-           if (!hook('redirectaftersave') && !$modal)
-           {
-             redirect($baseurl_short."pages/view.php?ref=" . urlencode($ref) . "&search=" . urlencode($search) . "&offset=" . urlencode($offset) . "&order_by=" . urlencode($order_by) . "&sort=" . urlencode($sort) . "&archive=" . urlencode($archive) . "&refreshcollectionframe=true");
-          }
-       }
-       else
-       {
-        if ((getval("uploader","")!="")&&(getval("uploader","")!="local"))
-        {
-                    # Save button pressed? Move to next step.
-          if (getval("save","")!="") {redirect($baseurl_short."pages/upload_" . getval("uploader","") . ".php?collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname",""))."&resource_type=" . urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . urlencode($no_exif) . "&autorotate=" . urlencode($autorotate) . "&themestring=" . urlencode(getval('themestring','')) . "&public=" . urlencode(getval('public','')) . "&archive=" . urlencode($archive) . $uploadparams . hook("addtouploadurl"));}
-       }
-                elseif ((getval("local","")!="")||(getval("uploader","")=="local")) // Test if fetching resource from local upload folder.
-                {
-                    # Save button pressed? Move to next step.
-                   if (getval("save","")!="") {redirect($baseurl_short."pages/team/team_batch_select.php?use_local=yes&collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname",""))."&resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . $autorotate . $uploadparams );}
-                }
-                elseif (getval("single","")!="") // Test if single upload (archived or not).
-                {
-                    # Save button pressed? Move to next step. if noupload is set - create resource without uploading stage
-                   if ((getval("noupload","")!="")&&(getval("save","")!="")) {$ref=copy_resource(0-$userref);redirect($baseurl_short."pages/view.php?ref=". urlencode($ref));}
-
-                   if (getval("save","")!="") {redirect($baseurl_short."pages/upload.php?resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . urlencode($autorotate) . "&archive=" . urlencode($archive) . $uploadparams );}
-                }    
-                else // Hence fetching from ftp.
-                {
-                    # Save button pressed? Move to next step.
-                   if (getval("save","")!="") {redirect($baseurl_short."pages/team/team_batch.php?collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname","")). "&resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . urlencode($autorotate) . $uploadparams );}
-                }
-             }
-          }
-          elseif (getval("save","")!="")
           {           
-            $show_error=true;
-         }
+          if ($ref>0 && getval("save","")!="")
+            {
+            # Log this
+            daily_stat("Resource edit",$ref);
+            if (!hook('redirectaftersave') && !$modal)
+              {
+              redirect($baseurl_short."pages/view.php?ref=" . urlencode($ref) . "&search=" . urlencode($search) . "&offset=" . urlencode($offset) . "&order_by=" . urlencode($order_by) . "&sort=" . urlencode($sort) . "&archive=" . urlencode($archive) . "&refreshcollectionframe=true");
+              }
+            }
+          else
+            {
+            if ($single) // Test if single upload (archived or not).
+              {
+              # Save button pressed? Move to next step. if noupload is set - create resource without uploading stage
+              if ((getval("noupload","")!="")&&(getval("save","")!=""))
+                {
+                $ref=copy_resource(0-$userref);
+                if($collection_add!="")
+                    {
+                    add_resource_to_collection($ref, $collection_add);
+                    set_user_collection($userref, $collection_add);
+                    }
+                redirect($baseurl_short."pages/view.php?ref=". urlencode($ref) . '&refreshcollectionframe=true');
+                exit();
+                }
+  
+              if (getval("save","")!="") {redirect($baseurl_short."pages/upload.php?resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . urlencode($autorotate) . "&archive=" . urlencode($archive) . $uploadparams );}
+              }
+            elseif ((getval("uploader","")!="")&&(getval("uploader","")!="local"))
+              {
+              # Save button pressed? Move to next step.
+              if (getval("save","")!="") {redirect($baseurl_short."pages/upload_" . getval("uploader","") . ".php?collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname",""))."&resource_type=" . urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . urlencode($no_exif) . "&autorotate=" . urlencode($autorotate) . "&themestring=" . urlencode(getval('themestring','')) . "&public=" . urlencode(getval('public','')) . "&archive=" . urlencode($archive) . $uploadparams . hook("addtouploadurl"));}
+              }
+            elseif ((getval("local","")!="")||(getval("uploader","")=="local")) // Test if fetching resource from local upload folder.
+              {
+              # Save button pressed? Move to next step.
+              if (getval("save","")!="") {redirect($baseurl_short."pages/team/team_batch_select.php?use_local=yes&collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname",""))."&resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . $autorotate . $uploadparams );}
+              }
+            else // Hence fetching from ftp.
+              {
+              # Save button pressed? Move to next step.
+              if (getval("save","")!="") {redirect($baseurl_short."pages/team/team_batch.php?collection_add=" . getval("collection_add","")."&entercolname=".urlencode(getvalescaped("entercolname","")). "&resource_type=". urlencode($resource_type) . "&status=" . $setarchivestate .  "&no_exif=" . $no_exif . "&autorotate=" . urlencode($autorotate) . $uploadparams );}
+              }
+            }
+          }
+        elseif (getval("save","")!="")
+          {           
+          $show_error=true;
+          }
       }
-      else
+    else
       {
-        # Save multiple resources
-       save_resource_data_multi($collection);
-       if(!hook("redirectaftermultisave")){
-         redirect($baseurl_short."pages/search.php?refreshcollectionframe=true&search=!collection" . $collection);
+      # Save multiple resources
+      $save_errors=save_resource_data_multi($collection);
+      if(!is_array($save_errors) && !hook("redirectaftermultisave"))
+        {
+        redirect($baseurl_short."pages/search.php?refreshcollectionframe=true&search=!collection" . $collection);
+        }      
+      $show_error=true;
       }
-   }
+  }
 
-    # If auto-saving, no need to continue as it will only add to bandwidth usage to send the whole edit page back to the client. Send a simple 'SAVED' message instead.
-   if (getval("autosave","")!="") {exit("SAVED");}
-}
+# If auto-saving, no need to continue as it will only add to bandwidth usage to send the whole edit page back to the client. Send a simple 'SAVED' message instead.
+if (getval("autosave","")!="") {exit("SAVED");}
+
 
 if (getval("tweak","")!="")
    {
@@ -527,7 +560,24 @@ function SaveAndClearButtons($extraclass="")
 ?>
 </script>
 
-<form method="post" action="<?php echo $baseurl_short?>pages/edit.php?ref=<?php echo urlencode($ref) ?>&amp;uploader=<?php echo urlencode(getvalescaped("uploader","")) ?>&amp;single=<?php echo urlencode(getvalescaped("single","")) ?>&amp;local=<?php echo urlencode(getvalescaped("local","")) ?>&amp;search=<?php echo urlencode($search)?>&amp;offset=<?php echo urlencode($offset) ?>&amp;order_by=<?php echo urlencode($order_by) ?>&amp;sort=<?php echo urlencode($sort) ?>&amp;archive=<?php echo urlencode($archive) ?>&amp;collection=<?php echo $collection ?>&amp;metadatatemplate=<?php echo getval("metadatatemplate","")  . $uploadparams?>&modal=<?php echo getval("modal","") ?>" id="mainform" onsubmit="return <?php echo ($modal?"Modal":"CentralSpace") ?>Post(this,true);">
+<?php
+$form_action = $baseurl_short . 'pages/edit.php?ref=' . urlencode($ref) . '&amp;uploader=' . urlencode(getvalescaped("uploader","")) . '&amp;single=' . urlencode(getvalescaped("single","")) . '&amp;local=' . urlencode(getvalescaped("local","")) . '&amp;search=' . urlencode($search) . '&amp;offset=' . urlencode($offset) . '&amp;order_by=' . urlencode($order_by) . '&amp;sort=' . urlencode($sort) . '&amp;archive=' . urlencode($archive) . '&amp;collection=' . $collection . '&amp;metadatatemplate=' . getval("metadatatemplate","")  . $uploadparams . '&modal=' . getval("modal","");
+// If resource type is set as a data only, don't reach upload stage (step 2)
+if(0 > $ref)
+    {
+    if(in_array($resource['resource_type'], $data_only_resource_types))
+        {
+        $uploadparams .= '&forcesingle=true&noupload=true';
+        $form_action = $baseurl_short . 'pages/edit.php?ref=' . urlencode($ref) . '&amp;uploader=' . urlencode(getvalescaped("uploader","")) . '&amp;local=' . urlencode(getvalescaped("local","")) . '&amp;search=' . urlencode($search) . '&amp;offset=' . urlencode($offset) . '&amp;order_by=' . urlencode($order_by) . '&amp;sort=' . urlencode($sort) . '&amp;archive=' . urlencode($archive) . '&amp;collection=' . $collection . '&amp;metadatatemplate=' . getval("metadatatemplate","")  . $uploadparams . '&modal=' . getval("modal","");
+        }
+    else
+        {
+        $uploadparams = str_replace(array('&forcesingle=true','&noupload=true'), array(''),$uploadparams);      
+        }
+    }
+?>
+
+<form method="post" action="<?php echo $form_action; ?>" id="mainform" onsubmit="return <?php echo ($modal?"Modal":"CentralSpace") ?>Post(this,true);">
 
    <div class="BasicsBox">
       <input type="hidden" name="submitted" value="true">
@@ -546,7 +596,7 @@ function SaveAndClearButtons($extraclass="")
       {
       if (!hook('replacebacklink') && !$modal) 
          {?>
-         <p><a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a></p><?php
+         <p><a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a></p><?php
          }
       if (!hook("replaceeditheader")) 
          { ?>
@@ -618,13 +668,23 @@ function SaveAndClearButtons($extraclass="")
             <br />
             <?php 
             }
-         if ($top_nav_upload_type=="local")
-            { $replace_upload_type="plupload"; } 
-         else 
-            { $replace_upload_type=$top_nav_upload_type; }
-         ?>
-         <a href="<?php echo $baseurl_short?>pages/upload_<?php echo $replace_upload_type ?>.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>&replace_resource=<?php echo urlencode($ref)  ?>&resource_type=<?php echo $resource['resource_type']?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo (($resource["file_extension"]!="")?$lang["replacefile"]:$lang["uploadafile"]) ?></a>
-         <?php 
+
+        if($top_nav_upload_type == 'local')
+            {
+            $replace_upload_type = 'plupload';
+            }
+        else 
+            {
+            $replace_upload_type=$top_nav_upload_type;
+            }
+
+        // Allow to upload only if resource is not a data only type
+        if(0 < $ref && !in_array($resource['resource_type'], $data_only_resource_types))
+            {
+            ?>
+            <a href="<?php echo $baseurl_short?>pages/upload_<?php echo $replace_upload_type ?>.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>&replace_resource=<?php echo urlencode($ref)  ?>&resource_type=<?php echo $resource['resource_type']?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo (($resource["file_extension"]!="")?$lang["replacefile"]:$lang["uploadafile"]) ?></a>
+            <?php
+            }
          if ($resource["file_extension"]!="") 
             {hook("afterreplacefile");} 
          else 
@@ -632,9 +692,9 @@ function SaveAndClearButtons($extraclass="")
          if (! $disable_upload_preview) 
             { ?>
             <br />
-     <a href="<?php echo $baseurl_short?>pages/upload_preview.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["uploadpreview"]?></a><?php } ?>
+     <a href="<?php echo $baseurl_short?>pages/upload_preview.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["uploadpreview"]?></a><?php } ?>
      <?php if (!$disable_alternative_files && !checkperm('A')) { ?><br />
-     <a href="<?php echo $baseurl_short?>pages/alternative_files.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>"  onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["managealternativefiles"]?></a><?php } ?>
+     <a href="<?php echo $baseurl_short?>pages/alternative_files.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>"  onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["managealternativefiles"]?></a><?php } ?>
      <?php if ($allow_metadata_revert){?><br />
      <a href="<?php echo $baseurl_short?>pages/edit.php?ref=<?php echo urlencode($ref) ?>&exif=true&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return confirm('<?php echo $lang["confirm-revertmetadata"]?>');">&gt; 
         <?php echo $lang["action-revertmetadata"]?></a><?php } ?>
@@ -684,23 +744,26 @@ function SaveAndClearButtons($extraclass="")
 <?php } ?>
 
 
-<?php } else { # Upload template: (writes to resource with ID [negative user ref])
+<?php }
+else
+  { # Upload template: (writes to resource with ID [negative user ref])
    if (!hook("replaceeditheader"))
    {
     # Define the title h1:
-    if (getval("uploader","")=="plupload") {$titleh1 = $lang["addresourcebatchbrowser"];} # Add Resource Batch - In Browser
-    elseif (getval("uploader","")=="java") {$titleh1 = $lang["addresourcebatchbrowserjava"];} # Add Resource Batch - In Browser - Java (Legacy)
-    elseif (getval("single","")!="")
-    {
-       if (getval("status","")=="2")
-       {
-            $titleh1 = $lang["newarchiveresource"]; # Add Single Archived Resource
-         }
-         else
-         {
-            $titleh1 = $lang["addresource"]; # Add Single Resource
-         }
+    if ($single)
+      {
+      if (getval("status","")=="2")
+        {
+        $titleh1 = $lang["newarchiveresource"]; # Add Single Archived Resource
+        }
+      else
+        {
+        $titleh1 = $lang["addresource"]; # Add Single Resource
+        }
       }
+    elseif (getval("uploader","")=="" || getval("uploader","")=="plupload") {$titleh1 = $lang["addresourcebatchbrowser"];} # Add Resource Batch - In Browser
+    elseif (getval("uploader","")=="java") {$titleh1 = $lang["addresourcebatchbrowserjava"];} # Add Resource Batch - In Browser - Java (Legacy)
+  
     elseif ((getval("local","")!="")||(getval("uploader","")=="local")) {$titleh1 = $lang["addresourcebatchlocalfolder"];} # Add Resource Batch - Fetch from local upload folder
     else $titleh1 = $lang["addresourcebatchftp"]; # Add Resource Batch - Fetch from FTP server
     
@@ -716,10 +779,15 @@ function SaveAndClearButtons($extraclass="")
     <?php
  }
 // Upload template: Show the required fields note at the top of the form.
- if (!$is_template) { ?><p class="greyText noPadding"><sup>*</sup> <?php echo $lang["requiredfield"]?></p><?php }
+if(!$is_template && $show_required_field_label)
+    {
+    ?>
+    <p class="greyText noPadding"><sup>*</sup> <?php echo $lang['requiredfield']; ?></p>
+    <?php
+    }
 
-   # Upload template: Show the save / clear buttons at the top too, to avoid unnecessary scrolling.
-   ?>
+# Upload template: Show the save / clear buttons at the top too, to avoid unnecessary scrolling.
+?>
 <div class="QuestionSubmit">
    <?php
    global $clearbutton_on_upload;
@@ -727,8 +795,15 @@ function SaveAndClearButtons($extraclass="")
      { ?>
   <input name="resetform" class="resetform" type="submit" value="<?php echo $lang["clearbutton"]?>" />&nbsp;
   <?php
-} ?>
-<input name="save" class="editsave" type="submit" value="&nbsp;&nbsp;<?php echo $lang["next"]?>&nbsp;&nbsp;" /><br />
+    }
+
+    $save_btn_value = $lang['next'];
+    if(0 > $ref && in_array($resource['resource_type'], $data_only_resource_types))
+        {
+        $save_btn_value = $lang['create'];
+        }
+?>
+<input name="save" class="editsave" type="submit" value="&nbsp;&nbsp;<?php echo $save_btn_value; ?>&nbsp;&nbsp;" /><br />
 <div class="clearerleft"> </div>
 </div>
 
@@ -737,7 +812,6 @@ function SaveAndClearButtons($extraclass="")
 <?php hook("editbefresmetadata"); ?>
 <?php if (!hook("replaceedittype")) { ?>
 <?php
-if (!checkperm("F*")) {
 if(!$multiple)
     {
     ?>
@@ -746,11 +820,41 @@ if(!$multiple)
         <select name="resource_type" id="resourcetype" class="stdwidth" 
                 onChange="<?php if ($ref>0) { ?>if (confirm('<?php echo $lang["editresourcetypewarning"]; ?>')){<?php } ?><?php echo ($modal?"Modal":"CentralSpace") ?>Post(document.getElementById('mainform'),true);<?php if ($ref>0) { ?>}else {return}<?php } ?>">
         <?php
-        $types = get_resource_types();
+        $types                = get_resource_types();
+        $shown_resource_types = array();
+
         for($n = 0; $n < count($types); $n++)
             {
-            if((checkperm("XU{$types[$n]["ref"]}") || in_array($types[$n]['ref'], $hide_resource_types)) && $resource["resource_type"]!=$types[$n]["ref"]) continue;   // skip showing a resource type that we do not to have permission to change to (unless it is currently set to that)
-            ?><option value="<?php echo $types[$n]["ref"]?>" <?php if ($resource["resource_type"]==$types[$n]["ref"]) {?>selected<?php } ?>><?php echo htmlspecialchars($types[$n]["name"])?></option><?php
+            // skip showing a resource type that we do not to have permission to change to (unless it is currently set to that). Applies to upload only
+            if(0 > $ref && (checkperm("XU{$types[$n]['ref']}") || in_array($types[$n]['ref'], $hide_resource_types)))
+                {
+                continue;
+                }
+
+            $shown_resource_types[] = $types[$n]['ref'];
+            ?>
+            <option value="<?php echo $types[$n]['ref']; ?>"
+                <?php
+                if($resource['resource_type'] == $types[$n]['ref'])
+                    {
+                    $selected_type = $types[$n]['ref'];
+                    ?>selected<?php
+                    }
+                    ?>
+            ><?php echo htmlspecialchars($types[$n]["name"])?></option>
+            <?php
+            }
+
+        // make sure the user template resource (edit template) has the correct resource type when they upload so they can see the correct specific fields
+        if('' == getval('submitted', ''))
+            {
+            if(!isset($selected_type))
+                {
+                $selected_type = $shown_resource_types[0];
+                }
+
+            update_resource_type($ref, $selected_type);
+            $resource['resource_type'] = $selected_type;
             }
             ?>
         </select>
@@ -785,7 +889,6 @@ else
     </div>
     <?php
     }
-}
 } # end hook("replaceedittype")
 
 $lastrt=-1;
@@ -829,7 +932,7 @@ if($embedded_data_user_select && $ref<0 && !$multiple)
 
 
       <td width="10" valign="middle">
-         <input type="radio" id="no_exif" name="exif_option" value="no" onClick="jQuery('.ExifOptions').hide();" <?php if(!$metadata_read_default) echo "checked" ?>>
+         <input type="radio" id="no_exif" name="exif_option" value="yes" onClick="jQuery('.ExifOptions').hide();" <?php if(!$metadata_read_default) echo "checked" ?>>
       </td>
       <td align="left" valign="middle">
          <label class="customFieldLabel" for="no_exif"><?php echo $lang["embedded_metadata_donot_extract_option"] ?></label>
@@ -939,252 +1042,9 @@ function is_field_displayed($field)
     || hook('edithidefield2', '', array('field' => $field)));
 }
 
-function check_display_condition($n, $field)
-{
-  global $fields, $scriptconditions, $required_fields_exempt, $blank_edit_template, $ref, $use;
-
-  $displaycondition=true;
-  $s=explode(";",$field["display_condition"]);
-  $condref=0;
-    foreach ($s as $condition) # Check each condition
-    {
-       $displayconditioncheck=false;
-       $s=explode("=",$condition);
-        for ($cf=0;$cf<count($fields);$cf++) # Check each field to see if needs to be checked
-        {
-            if ($s[0]==$fields[$cf]["name"]) # this field needs to be checked
-            {
-                $scriptconditions[$condref]["field"] = $fields[$cf]["ref"];  # add new jQuery code to check value
-                $scriptconditions[$condref]['type'] = $fields[$cf]['type'];
-                $scriptconditions[$condref]['options'] = $fields[$cf]['options'];
-
-                $checkvalues=$s[1];
-                $validvalues=explode("|",mb_strtoupper($checkvalues));
-                $scriptconditions[$condref]["valid"]= "\"";
-                $scriptconditions[$condref]["valid"].= implode("\",\"",$validvalues);
-                $scriptconditions[$condref]["valid"].= "\"";
-                $v=trim_array(explode(",",mb_strtoupper($fields[$cf]["value"])));
-
-                // If blank edit template is used, on upload form the dependent fields should be hidden
-                if($blank_edit_template && $ref < 0 && $use === '-1') {
-                   $v = array();
-                }
-                
-                foreach ($validvalues as $validvalue)
-                {
-                    if (in_array($validvalue,$v)) {$displayconditioncheck=true;} # this is  a valid value
-                 }
-                 if (!$displayconditioncheck) {$displaycondition=false;$required_fields_exempt[]=$field["ref"];}
-                #add jQuery code to update on changes
-                    if ($fields[$cf]["type"]==2) # add onchange event to each checkbox field
-                    {
-                        # construct the value from the ticked boxes
-                        # Note: it seems wrong to start with a comma, but this ensures it is treated as a comma separated list by split_keywords(), so if just one item is selected it still does individual word adding, so 'South Asia' is split to 'South Asia','South','Asia'.
-                     $options=trim_array(explode(",",$fields[$cf]["options"]));
-                     ?><script type="text/javascript">
-                     jQuery(document).ready(function() {<?php
-                       for ($m=0;$m<count($options);$m++)
-                       {
-                         $checkname=$fields[$cf]["ref"] . "_" . md5($options[$m]);
-                         echo "
-                         jQuery('input[name=\"" . $checkname . "\"]').change(function (){
-                           checkDisplayCondition" . $field["ref"] . "();
-                        });";
-                  }
-                  ?>
-               });
-                     </script><?php
-                  }
-                        # add onChange event to each radio button
-                  else if($fields[$cf]['type'] == 12) {
-
-                    $options = explode(',', $fields[$cf]['options']); ?>
-
-                    <script type="text/javascript">
-                    jQuery(document).ready(function() {
-
-                       <?php
-                       foreach ($options as $option) {
-                         $element_id = 'field_' . $fields[$cf]['ref'] . '_' . sha1($option);
-                         $jquery = sprintf('
-                          jQuery("#%s").change(function() {
-                            checkDisplayCondition%s();
-                         });
-                         ',
-                         $element_id,
-                         $field["ref"]
-                         );
-                         echo $jquery;
-                      } ?>
-
-                   });
-                    </script>
-
-                    <?php
-                 }
-                 else
-                 {
-                  ?>
-                  <script type="text/javascript">
-                  jQuery(document).ready(function() {
-                    jQuery('#field_<?php echo $fields[$cf]["ref"];?>').change(function (){
-
-                       checkDisplayCondition<?php echo $field["ref"];?>();
-
-                    });
-                 });
-                  </script>
-                  <?php
-               }
-            }
-
-            } # see if next field needs to be checked
-
-            $condref++;
-        } # check next condition
-
-        ?>
-        <script type="text/javascript">
-        function checkDisplayCondition<?php echo $field["ref"];?>()
-        {
-          <?php echo "field" . $field["ref"] . "status=jQuery('#question_" . $n . "').css('display');
-          ";
-          echo "newfield" . $field["ref"] . "status='none';
-          ";
-          echo "newfield" . $field["ref"] . "provisional=true;
-          ";
-
-          foreach ($scriptconditions as $scriptcondition)
-          {
-            echo "newfield" . $field["ref"] . "provisionaltest=false;
-            ";
-            echo "if (jQuery('#field_" . $scriptcondition["field"] . "').length!=0)
-            {";
-            echo "
-            fieldcheck" . $scriptcondition["field"] . "=jQuery('#field_" . $scriptcondition["field"] . "').val().toUpperCase();
-            ";
-            echo "fieldvalues" . $scriptcondition["field"] . "=fieldcheck" . $scriptcondition["field"] . ".split(',');
-                //alert(fieldvalues" . $scriptcondition["field"] . ");
-         }";
-
-         echo "
-         else
-         {
-           ";
-
-                # Handle Radio Buttons type:
-           if($scriptcondition['type'] == 12) {
-
-             $scriptcondition["options"] = explode(',', $scriptcondition["options"]);
-
-             foreach ($scriptcondition["options"] as $key => $value) {
-               $scriptcondition["options"][$key] = sha1($value);
-            }
-
-            $scriptcondition["options"] = implode(',', $scriptcondition["options"]);
-            ?>
-
-            var options_string = '<?php echo $scriptcondition["options"]; ?>';
-
-            var field<?php echo $scriptcondition["field"]; ?>_options = options_string.split(',');
-
-            var checked = null;
-
-            for(var i=0; i < field<?php echo $scriptcondition["field"]; ?>_options.length; i++){
-
-               if(jQuery('#field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i]).is(':checked')) {
-                 checked = jQuery('#field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i] + ':checked').val();
-                 checked = checked.toUpperCase();
-              }
-
-           }
-
-           fieldokvalues<?php echo $scriptcondition["field"]; ?> = [<?php echo $scriptcondition["valid"]; ?>];
-
-           if(checked !== null && jQuery.inArray(checked, fieldokvalues<?php echo $scriptcondition["field"]; ?>) > -1) {
-            newfield<?php echo $field["ref"]; ?>provisionaltest = true;
-         }
-
-         <?php
-      }
-
-      echo "fieldvalues" . $scriptcondition["field"] . "=new Array();
-      ";
-      echo "checkedvals" . $scriptcondition["field"] . "=jQuery('input[name^=" . $scriptcondition["field"] . "_]')
-      ";
-      echo "jQuery.each(checkedvals" . $scriptcondition["field"] . ",function(){
-       if (jQuery(this).is(':checked'))
-       {
-         checktext" . $scriptcondition["field"] . "=jQuery(this).parent().next().text().toUpperCase();
-         checktext" . $scriptcondition["field"] . " = jQuery.trim(checktext" . $scriptcondition["field"] . ");
-         fieldvalues" . $scriptcondition["field"] . ".push(checktext" . $scriptcondition["field"] . ");
-                        //alert(fieldvalues" . $scriptcondition["field"] . ");
-      }
-   })
-}";
-
-echo "fieldokvalues" . $scriptcondition["field"] . "=new Array();
-";
-echo "fieldokvalues" . $scriptcondition["field"] . "=[" . $scriptcondition["valid"] . "];
-";
-echo "jQuery.each(fieldvalues" . $scriptcondition["field"] . ",function(f,v){
-                    //alert(\"checking value \" + fieldvalues" . $scriptcondition["field"] . " + \" against \" + fieldokvalues" . $scriptcondition["field"] . ");
-                    //alert(jQuery.inArray(fieldvalues" . $scriptcondition["field"] . ",fieldokvalues" . $scriptcondition["field"] . "));
- if ((jQuery.inArray(v,fieldokvalues" . $scriptcondition["field"] . "))>-1 || (fieldvalues" . $scriptcondition["field"] . " ==fieldokvalues" . $scriptcondition["field"] ." ))
- {
-   newfield" . $field["ref"] . "provisionaltest=true;
-}
-});
-
-if (newfield" . $field["ref"] . "provisionaltest==false)
- {newfield" . $field["ref"] . "provisional=false;}
-";
-}
-
-echo "
-exemptfieldsval=jQuery('#exemptfields').val();
-exemptfieldsarr=exemptfieldsval.split(',');
-if (newfield" . $field["ref"] . "provisional==true)
-{
-  if (jQuery.inArray(" . $field["ref"] . ",exemptfieldsarr))
-  {
-    exemptfieldsarr.splice(jQuery.inArray(" . $field["ref"] . ", exemptfieldsarr), 1 );
- }
- newfield" . $field["ref"] . "status='block'
-}
-else
-{
-
-
-  if ((jQuery.inArray(" . $field["ref"] . ",exemptfieldsarr))==-1)
-  {
-    exemptfieldsarr.push(" . $field["ref"] . ")
- }
-}
-jQuery('#exemptfields').val(exemptfieldsarr.join(","));
-
-
-";
-
-echo "if (newfield" . $field["ref"] . "status!=field" . $field["ref"] . "status)
-{
-  jQuery('#question_" . $n . "').slideToggle();
-  if (jQuery('#question_" . $n . "').css('display')=='block')
-    {jQuery('#question_" . $n . "').css('border-top','');}
- else
-    {jQuery('#question_" . $n . "').css('border-top','none');}
-}
-
-";
-?>}
-</script>
-<?php
-return $displaycondition;
-}
-
 # Allows language alternatives to be entered for free text metadata fields.
 function display_multilingual_text_field($n, $field, $translations)
-{
+  {
   global $language, $languages, $lang;
   ?>
   <p><a href="#" class="OptionToggle" onClick="l=document.getElementById('LanguageEntry_<?php echo $n?>');if (l.style.display=='block') {l.style.display='none';this.innerHTML='<?php echo $lang["showtranslations"]?>';} else {l.style.display='block';this.innerHTML='<?php echo $lang["hidetranslations"]?>';} return false;"><?php echo $lang["showtranslations"]?></a></p>
@@ -1219,10 +1079,10 @@ function display_multilingual_text_field($n, $field, $translations)
      }
   }
   ?></table><?php
-}
+  }
 
 function display_field($n, $field, $newtab=false)
-{
+  {
   global $use, $ref, $original_fields, $multilingual_text_fields, $multiple, $lastrt,$is_template, $language, $lang,
   $blank_edit_template, $edit_autosave, $errors, $tabs_on_edit, $collapsible_sections, $ctrls_to_save,
   $embedded_data_user_select, $embedded_data_user_select_fields, $show_error, $save_errors, $baseurl;
@@ -1232,35 +1092,35 @@ function display_field($n, $field, $newtab=false)
   $value=trim($value);
 
   if ($field["omit_when_copying"] && $use!=$ref)
-  {
-        # Omit when copying - return this field back to the value it was originally, instead of using the current value which has been fetched from the new resource.
+    {
+    # Omit when copying - return this field back to the value it was originally, instead of using the current value which has been fetched from the new resource.
     reset($original_fields);
     foreach ($original_fields as $original_field)
-    {
+      {
       if ($original_field["ref"]==$field["ref"]) {$value=$original_field["value"];}
-   }
-}
-
-$displaycondition=true;
-if ($field["display_condition"]!="")
-{
-        #Check if field has a display condition set
- $displaycondition=check_display_condition($n,$field);
-}
-
-if ($multilingual_text_fields)
-{
-        # Multilingual text fields - find all translations and display the translation for the current language.
- $translations=i18n_get_translations($value);
- if (array_key_exists($language,$translations)) {$value=$translations[$language];} else {$value="";}
-}
-
-    if ($multiple && (getval("copyfrom","")=="" || str_replace(array(" ",","),"",$value)=="")) {$value="";} # Blank the value for multi-edits  unless copying data from resource.
-
-    if ($field["resource_type"]!=$lastrt && $lastrt!=-1 && $collapsible_sections)
-    {
-       ?></div><h2 class="CollapsibleSectionHead" id="resource_type_properties"><?php echo htmlspecialchars(get_resource_type_name($field["resource_type"]))?> <?php echo $lang["properties"]?></h2><div class="CollapsibleSection" id="ResourceProperties<?php if ($ref==-1) echo "Upload"; ?><?php echo $field["resource_type"]; ?>Section"><?php
+      }
     }
+
+  $displaycondition=true;
+  if ($field["display_condition"]!="")
+    {
+    #Check if field has a display condition set
+    $displaycondition=check_display_condition($n,$field);
+    }
+
+  if ($multilingual_text_fields)
+    {
+    # Multilingual text fields - find all translations and display the translation for the current language.
+    $translations=i18n_get_translations($value);
+    if (array_key_exists($language,$translations)) {$value=$translations[$language];} else {$value="";}
+    }
+
+  if ($multiple && (getval("copyfrom","")=="" || str_replace(array(" ",","),"",$value)=="")) {$value="";} # Blank the value for multi-edits  unless copying data from resource.
+
+  if ($field["resource_type"]!=$lastrt && $lastrt!=-1 && $collapsible_sections)
+      {
+      ?></div><h2 class="CollapsibleSectionHead" id="resource_type_properties"><?php echo htmlspecialchars(get_resource_type_name($field["resource_type"]))?> <?php echo $lang["properties"]?></h2><div class="CollapsibleSection" id="ResourceProperties<?php if ($ref==-1) echo "Upload"; ?><?php echo $field["resource_type"]; ?>Section"><?php
+      }
     $lastrt=$field["resource_type"];
 
     # Blank form if 'reset form' has been clicked.
@@ -1269,98 +1129,115 @@ if ($multilingual_text_fields)
     # If config option $blank_edit_template is set, always show a blank form for user edit templates.
     if ($ref<0 && $blank_edit_template && getval("submitted","")=="") {$value="";}
 
-    ?>
-    <?php if ($multiple && !hook("replace_edit_all_checkbox","",array($field["ref"]))) { # Multiple items, a toggle checkbox appears which activates the question
-     ?><div class="edit_multi_checkbox"><input name="editthis_<?php echo htmlspecialchars($name) ?>" id="editthis_<?php echo $n?>" type="checkbox" value="yes" onClick="var q=document.getElementById('question_<?php echo $n?>');var m=document.getElementById('modeselect_<?php echo $n?>');var f=document.getElementById('findreplace_<?php echo $n?>');if (this.checked) {q.style.display='block';m.style.display='block';} else {q.style.display='none';m.style.display='none';f.style.display='none';document.getElementById('modeselectinput_<?php echo $n?>').selectedIndex=0;}" <?php if(getval("copyfrom","")!="" && $value!=""){echo " checked" ;} ?>>&nbsp;<label for="editthis<?php echo $n?>"><?php echo htmlspecialchars($field["title"]) ?></label></div><!-- End of edit_multi_checkbox --><?php } ?>
-
-     <?php
-     if ($multiple && !hook("replace_edit_all_mode_select","",array($field["ref"])))
-     {
-        # When editing multiple, give option to select Replace All Text or Find and Replace
-       ?>
-       <div class="Question" id="modeselect_<?php echo $n?>" style="<?php if($value==""){echo "display:none;";} ?>padding-bottom:0;margin-bottom:0;">
-          <label for="modeselectinput"><?php echo $lang["editmode"]?></label>
-          <select id="modeselectinput_<?php echo $n?>" name="modeselect_<?php echo $field["ref"]?>" class="stdwidth" onChange="var fr=document.getElementById('findreplace_<?php echo $n?>');var q=document.getElementById('question_<?php echo $n?>');if (this.value=='FR') {fr.style.display='block';q.style.display='none';} else {fr.style.display='none';q.style.display='block';}<?php hook ("edit_all_mode_js"); ?>">
-             <option value="RT"><?php echo $lang["replacealltext"]?></option>
-             <?php if (in_array($field["type"], array("0","1","5","8"))) {
+    /****************************** Errors on saving ***************************************/
+    $field_save_error = FALSE;
+    if (isset($show_error) && isset($save_errors))
+      {
+      if(array_key_exists($field['ref'], $save_errors))
+        {
+        $field_save_error = TRUE;
+        }
+      }
+     
+    if ($multiple && !hook("replace_edit_all_checkbox","",array($field["ref"])))
+      {
+      # Multiple items, a toggle checkbox appears which activates the question
+      ?>
+      <div class="edit_multi_checkbox"><input name="editthis_<?php echo htmlspecialchars($name) ?>" id="editthis_<?php echo $n?>" type="checkbox" value="yes"<?php if($field_save_error){?> checked<?php }?> onClick="var q=document.getElementById('question_<?php echo $n?>');var m=document.getElementById('modeselect_<?php echo $n?>');var f=document.getElementById('findreplace_<?php echo $n?>');if (this.checked) {q.style.display='block';m.style.display='block';} else {q.style.display='none';m.style.display='none';f.style.display='none';document.getElementById('modeselectinput_<?php echo $n?>').selectedIndex=0;}" <?php if(getval("copyfrom","")!="" && $value!=""){echo " checked" ;} ?>>&nbsp;<label for="editthis<?php echo $n?>"><?php echo htmlspecialchars($field["title"]) ?></label></div><!-- End of edit_multi_checkbox -->
+      <?php
+      }
+      
+  if ($multiple && !hook("replace_edit_all_mode_select","",array($field["ref"])))
+      {
+      # When editing multiple, give option to select Replace All Text or Find and Replace
+      ?>
+      <div class="Question" id="modeselect_<?php echo $n?>" style="<?php if($value=="" && !$field_save_error ){echo "display:none;";} ?>padding-bottom:0;margin-bottom:0;">
+      <label for="modeselectinput"><?php echo $lang["editmode"]?></label>
+      <select id="modeselectinput_<?php echo $n?>" name="modeselect_<?php echo $field["ref"]?>" class="stdwidth" onChange="var fr=document.getElementById('findreplace_<?php echo $n?>');var q=document.getElementById('question_<?php echo $n?>');<?php if ($field["type"]==7){?>if (this.value=='RM'){branch_limit_field['field_<?php echo $field["ref"]?>']=1;}else{branch_limit_field['field_<?php echo $field["ref"]?>']=0;}<?php } ?>if (this.value=='FR') {fr.style.display='block';q.style.display='none';} else {fr.style.display='none';q.style.display='block';}<?php hook ("edit_all_mode_js"); ?>">
+      <option value="RT"><?php echo $lang["replacealltext"]?></option>
+      <?php
+      if (in_array($field["type"], array("0","1","5","8")))
+        {
         # Find and replace appies to text boxes only.
-                ?>
-                <option value="FR"><?php echo $lang["findandreplace"]?></option>
-                <?php } ?>
-                <?php
-                if (in_array($field["type"], array("0","1","5","8"))) {
+        ?>
+        <option value="FR" <?php if(getval("modeselect_" . $field["ref"],"")=="FR"){?> selected<?php } ?>><?php echo $lang["findandreplace"]?></option>
+        <?php
+        }
+      if (in_array($field["type"], array("0","1","5","8")))
+        {
         # Prepend applies to text boxes only.
-                   ?>
-                   <option value="PP"><?php echo $lang["prependtext"]?></option>
-                   <?php }
-                   if (in_array($field["type"], array("0","1","2","3","5","7","8","9"))) {
+        ?>
+        <option value="PP"<?php if(getval("modeselect_" . $field["ref"],"")=="PP"){?> selected<?php } ?>><?php echo $lang["prependtext"]?></option>
+        <?php
+        }
+      if (in_array($field["type"], array("0","1","2","3","5","7","8","9")))
+        {
         # Append applies to text boxes, checkboxes ,category tree and dropdowns only.
-                      ?>
-                      <option value="AP"><?php echo $lang["appendtext"]?></option>
-                      <?php }
-                      if ($field["type"]==0 || $field["type"]==1 || $field["type"]==5 || $field["type"]==2 || $field["type"]==3) { ?>
-                      <!--- Remove applies to text boxes, checkboxes and dropdowns only. -->
-                      <option value="RM"><?php echo $lang["removetext"]?></option>
-                      <?php } ?>
-                      <?php hook ("edit_all_extra_modes"); ?>
-                   </select>
-                </div><!-- End of modeselect_<?php echo $n?> -->
+        ?>
+        <option value="AP"<?php if(getval("modeselect_" . $field["ref"],"")=="AP"){?> selected<?php } ?>><?php echo $lang["appendtext"]?></option>
+        <?php
+        }
+      if (in_array($field["type"], array("0","1","2","3","5","7","9")))
+        {
+        # Remove applies to text boxes, checkboxes, dropdowns, category trees and dynamic keywords only. 
+        ?>
+        <option value="RM"<?php if(getval("modeselect_" . $field["ref"],"")=="RM"){?> selected<?php } ?>><?php echo $lang["removetext"]?></option>
+        <?php
+        }
+        hook ("edit_all_extra_modes");
+        ?>
+        </select>
+      </div><!-- End of modeselect_<?php echo $n?> -->
 
-                <div class="Question" id="findreplace_<?php echo $n?>" style="display:none;border-top:none;">
-                   <label>&nbsp;</label>
-                   <?php echo $lang["find"]?> <input type="text" name="find_<?php echo $field["ref"]?>" class="shrtwidth">
-                   <?php echo $lang["andreplacewith"]?> <input type="text" name="replace_<?php echo $field["ref"]?>" class="shrtwidth">
-                </div><!-- End of findreplace_<?php echo $n?> -->
+      <div class="Question" id="findreplace_<?php echo $n?>" style="display:none;border-top:none;">
+        <label>&nbsp;</label>
+        <?php echo $lang["find"]?> <input type="text" name="find_<?php echo $field["ref"]?>" class="shrtwidth">
+        <?php echo $lang["andreplacewith"]?> <input type="text" name="replace_<?php echo $field["ref"]?>" class="shrtwidth">
+      </div><!-- End of findreplace_<?php echo $n?> -->
 
-                <?php hook ("edit_all_after_findreplace","",array($field,$n)); ?>
-                <?php
-             }
+      <?php hook ("edit_all_after_findreplace","",array($field,$n)); 
+      }
+      ?>
 
-             /****************************** Errors on saving ***************************************/
-             $field_save_error = FALSE;
-             if (isset($show_error) && isset($save_errors)) {
-                if(array_key_exists($field['ref'], $save_errors)) {
-                  $field_save_error = TRUE;
-               }
-            }
-            /***************************************************************************************/
-            ?>
-
-            <div class="Question <?php if($field_save_error) { echo 'FieldSaveError'; } ?>" id="question_<?php echo $n?>" <?php
-            if ($multiple || !$displaycondition || $newtab)
-             {?>style="border-top:none;<?php 
+      <div class="Question <?php if($field_save_error) { echo 'FieldSaveError'; } ?>" id="question_<?php echo $n?>" <?php
+      if (($multiple && !$field_save_error) || !$displaycondition || $newtab)
+        {?>style="border-top:none;<?php 
         if (($multiple && $value=="") || !$displaycondition) # Hide this
-        {?>
+        {
+        ?>
         display:none;
-        <?php }
+        <?php
+        }
         ?>"<?php
-     }
+        }
      ?>>
      <?php 
      $labelname = $name;
 
-            // Add _selector to label so it will keep working:
-     if($field['type'] == 9) {
-        $labelname .= '_selector';
-     }
+     // Add _selector to label so it will keep working:
+     if($field['type'] == 9)
+      {
+      $labelname .= '_selector';
+      }
 
-            // Add -d to label so it will keep working
-     if($field['type'] == 4) {
+      // Add -d to label so it will keep working
+     if($field['type'] == 4)
+        {
         $labelname .= '-d';
-     }
-     ?>
+        }
+        ?>
      <label for="<?php echo htmlspecialchars($labelname)?>" ><?php if (!$multiple) {?><?php echo htmlspecialchars($field["title"])?> <?php if (!$is_template && $field["required"]==1) { ?><sup>*</sup><?php } ?><?php } ?></label>
 
      <?php
     # Autosave display
-     if ($edit_autosave || $ctrls_to_save) { ?>
-     <div class="AutoSaveStatus">
-     <span id="AutoSaveStatus<?php echo $field["ref"] ?>" style="display:none;"></span>
-     </div>
-     <?php } ?>
-
-
-     <?php 
+     if ($edit_autosave || $ctrls_to_save)
+      {
+      ?>
+      <div class="AutoSaveStatus">
+      <span id="AutoSaveStatus<?php echo $field["ref"] ?>" style="display:none;"></span>
+      </div>
+      <?php
+      } 
     # Define some Javascript for help actions (applies to all fields)
      $help_js="onBlur=\"HideHelp(" . $field["ref"] . ");return false;\" onFocus=\"ShowHelp(" . $field["ref"] . ");return false;\"";
 
@@ -1375,7 +1252,6 @@ if ($multilingual_text_fields)
     if ($type=="") {$type=0;} # Default to text type.
     if (!hook("replacefield","",array($field["type"],$field["ref"],$n)))
     	{
-        node_field_options_override($field);
 		global $auto_order_checkbox,$auto_order_checkbox_case_insensitive;
 		include "edit_fields/" . $type . ".php";
 		}
@@ -1384,26 +1260,26 @@ if ($multilingual_text_fields)
 
     # Display any error messages from previous save
     if (array_key_exists($field["ref"],$errors))
-    {
+      {
        ?>
        <div class="FormError">!! <?php echo $errors[$field["ref"]]?> !!</div>
        <?php
-    }
+      }
 
     if (trim($field["help_text"]!=""))
-    {
+     {
         # Show inline help for this field.
         # For certain field types that have no obvious focus, the help always appears.
        ?>
        <div class="FormHelp" style="padding:0;<?php if (!in_array($field["type"],array(2,4,6,7,10))) { ?> display:none;<?php } else { ?> clear:left;<?php } ?>" id="help_<?php echo $field["ref"]?>"><div class="FormHelpInner"><?php echo nl2br(trim(i18n_get_translated($field["help_text"],false)))?></div></div>
        <?php
-    }
+     }
 
     # If enabled, include code to produce extra fields to allow multilingual free text to be entered.
     if ($multilingual_text_fields && ($field["type"]==0 || $field["type"]==1 || $field["type"]==5))
-    {
+      {
        display_multilingual_text_field($n, $field, $translations);
-    }
+      }
     
     if(($embedded_data_user_select || (isset($embedded_data_user_select_fields) && in_array($field["ref"],$embedded_data_user_select_fields))) && ($ref<0 && !$multiple))
     {
@@ -1449,17 +1325,14 @@ if ($multilingual_text_fields)
       </tbody>
    </table>        
    <?php
-}
-?>
-<div class="clearerleft"> </div>
-</div><!-- end of question_<?php echo $n?> div -->
-<?php   
-
-
-
-
-hook('afterfielddisplay', '', array($n, $field));
-}
+  }
+  ?>
+  <div class="clearerleft"> </div>
+  </div><!-- end of question_<?php echo $n?> div -->
+  <?php     
+  
+  hook('afterfielddisplay', '', array($n, $field));
+  }
 
 ?>
 </div>
@@ -1591,7 +1464,8 @@ function SelectTab(tab)
             }
             $tabname=$fields[$n]["tab_name"];
             $fieldcount++;
-
+            
+			node_field_options_override($fields[$n]);
             display_field($n, $fields[$n], $newtab);
          }
       }
@@ -1975,27 +1849,41 @@ if (!$edit_upload_options_at_top){include '../include/edit_upload_options.php';}
 
 
 </div>
+<?php
+if(!hook('replacesubmitbuttons'))
+    {
+    ?>
+    <div class="QuestionSubmit">
+    <?php
+    global $clearbutton_on_upload;
+    if(($clearbutton_on_upload && $ref < 0 && !$multiple) || ($ref > 0 && $clearbutton_on_edit))
+        {
+        ?>
+        <input name="resetform" class="resetform" type="submit" value="<?php echo $lang["clearbutton"]?>" />&nbsp;
+        <?php
+        }
 
-<?php if (!hook('replacesubmitbuttons')) 
-   { ?>
-   <div class="QuestionSubmit">
-      <?php
-      global $clearbutton_on_upload;
-      if(($clearbutton_on_upload && $ref<0 && !$multiple) || ($ref>0 && $clearbutton_on_edit)) 
-         { ?>
-         <input name="resetform" class="resetform" type="submit" value="<?php echo $lang["clearbutton"]?>" />&nbsp;
-         <?php
-         } ?>
-         <input <?php if ($multiple) { ?>onclick="return confirm('<?php echo $lang["confirmeditall"]?>');"<?php } ?> name="save" class="editsave" type="submit" value="&nbsp;&nbsp;<?php echo ($ref>0)?$lang["save"]:$lang["next"]?>&nbsp;&nbsp;" /><br><br>
-      <div class="clearerleft"> </div>
-   </div>
-   <?php 
-   }
+        $save_btn_value = (0 < $ref) ? $lang['save'] : $lang['next'];
+        if(0 > $ref && in_array($resource['resource_type'], $data_only_resource_types))
+            {
+            $save_btn_value = $lang['create'];
+            }
+        ?>
+        <input <?php if ($multiple) { ?>onclick="return confirm('<?php echo $lang["confirmeditall"]?>');"<?php } ?> name="save" class="editsave" type="submit" value="&nbsp;&nbsp;<?php echo $save_btn_value; ?>&nbsp;&nbsp;" /><br><br>
+        <div class="clearerleft"> </div>
+    </div>
+    <?php 
+    }
    
 # Duplicate navigation
 if (!$multiple && !$modal && $ref>0 &&!hook("dontshoweditnav")) {EditNav();}
 
-if (!$is_template) { ?><p><sup>*</sup> <?php echo $lang["requiredfield"]?></p><?php } 
+if(!$is_template && $show_required_field_label)
+    {
+    ?>
+    <p><sup>*</sup> <?php echo $lang['requiredfield']; ?></p>
+    <?php
+    } 
 
 if($collapsible_sections)
 {
@@ -2028,28 +1916,29 @@ if($multiple){echo "</div>";} ?>
                 );
 </script>
 
-<?php if (isset($show_error) && isset($save_errors) && !hook('replacesaveerror')) {
+<?php
+if (isset($show_error) && isset($save_errors) && !hook('replacesaveerror'))
+  {
   ?>
   <script type="text/javascript">
 
-        // Find the first field that triggered the error:
-        var error_fields;
+  // Find the first field that triggered the error:
+  var error_fields;
 
-        error_fields = document.getElementsByClassName('FieldSaveError');
-        window.location.hash = error_fields[0].id;
+  error_fields = document.getElementsByClassName('FieldSaveError');
+  window.location.hash = error_fields[0].id;
 
-        </script>
-        <?php
-        foreach ($save_errors as $save_error_field=>$save_error_message)
-        {
-          ?>
-          <script type="text/javascript">
-          alert('<?php echo htmlspecialchars($save_error_message) ?>');
-          </script><?php
-       }
+  </script>
+  <?php
+  foreach ($save_errors as $save_error_field=>$save_error_message)
+    {
+      ?>
+      <script type="text/javascript">
+      alert('<?php echo htmlspecialchars($save_error_message) ?>');
+      </script><?php
     }
+ }
 
-    hook("autolivejs");
+hook("autolivejs");
 
-    include "../include/footer.php";
-    ?>
+include "../include/footer.php";

@@ -1,7 +1,7 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
-include "../include/authenticate.php"; if (! (checkperm("c") || checkperm("d"))) {exit ("Permission denied.");}
+include_once "../include/general.php";
+include "../include/authenticate.php"; if (! (checkperm("c") || checkperm("d") || hook('upload_auth_override'))) {exit ("Permission denied.");}
 include "../include/image_processing.php";
 include "../include/resource_functions.php";
 
@@ -39,9 +39,9 @@ if (strpos($search,"!")!==false) {$restypes="";}
 $archive=getvalescaped("archive",0,true);
 $setarchive=getvalescaped("status",0,true);
 
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);
 
 if (getval("createblank","")!=""){
     if ($ref==""){
@@ -130,8 +130,8 @@ else
 ?>
 <?php hook("upload_page_top"); ?>
 <?php if ($ref!=""){?><p>
-	<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/edit.php?ref=<?php echo urlencode($ref)?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>">&lt;&nbsp;<?php echo $lang["backtoeditresource"]?></a><br / >
-	<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref)?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a>
+	<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/edit.php?ref=<?php echo urlencode($ref)?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoeditresource"]?></a><br / >
+	<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref)?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a>
 </p>
 <?php } ?>
 <h1><?php echo $titleh1 ?></h1>
@@ -165,6 +165,9 @@ function check(filename) {
 <input type="hidden" name="ref" value="<?php echo htmlspecialchars($ref) ?>" />
 <input type="hidden" name="resource_type" value="<?php echo htmlspecialchars($resource_type) ?>" />
 <input type="hidden" name="archive" value="<?php echo htmlspecialchars($setarchive) ?>" />
+<?php
+hook('uploadafterhidden');
+?>
 <br/>
 <?php if ($status!="") { ?><?php echo $status?><?php } ?>
 <div id="invalid" style="display:none;" class="FormIncorrect"><?php echo str_replace_formatted_placeholder("%extensions", str_replace(",",", ",$allowed_extensions), $lang['invalidextension_mustbe-extensions'])?></div>

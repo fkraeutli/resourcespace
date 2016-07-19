@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 
 if (!checkperm("a"))
@@ -94,6 +94,11 @@ if (getval("save",false))
 			$logo_extension=$logo_pathinfo['extension'];
 			$logo_filename="{$logo_dir}/group{$ref}.{$logo_extension}";
 
+            if(in_array($logo_extension, $banned_extensions))
+                {
+                trigger_error('You are not allowed to upload "' . $logo_extension . '" files to the system!');
+                }
+
 			if (!move_uploaded_file($_FILES['grouplogo']['tmp_name'], $logo_filename))		// this will overwrite if already existing
 				{
 				unset ($logo_extension);
@@ -106,9 +111,10 @@ if (getval("save",false))
 			log_activity(null,null,null,'usergroup','group_specific_logo',$ref);
 			}
 
-	foreach (array("name","permissions","fixed_theme","parent","search_filter","edit_filter","derestrict_filter",
+	foreach (array("name","permissions","parent","search_filter","edit_filter","derestrict_filter",
 					"resource_defaults","config_options","welcome_message","ip_restrict","request_mode","allow_registration_selection") as $column)		
-		{		
+		
+		{
 		if ($column=="allow_registration_selection")
 			{
 			$val=getval($column,"0") ? "1" : "0";
@@ -125,6 +131,9 @@ if (getval("save",false))
 			{
 			$val=getvalescaped($column,"");
 			}
+			
+		if ($execution_lockout && $column=="config_options") {$val="";} # Do not allow config overrides if $execution_lockout is set.
+		
 		if (isset($sql))
 			{
 			$sql.=",";
@@ -185,7 +194,7 @@ include "../../include/header.php";
 	<div class="BasicsBox">
 
 	<p>
-		<a href="" onclick="return CentralSpaceLoad('<?php echo $baseurl_short; ?>pages/admin/admin_group_management.php?<?php echo $url_params; ?>',true);">&lt;&nbsp;<?php echo $lang['page-title_user_group_management']; ?></a>
+		<a href="" onclick="return CentralSpaceLoad('<?php echo $baseurl_short; ?>pages/admin/admin_group_management.php?<?php echo $url_params; ?>',true);"><?php echo LINK_CARET_BACK ?><?php echo $lang['page-title_user_group_management']; ?></a>
 	</p>
 
 	<h1><?php echo $lang['page-title_user_group_management_edit'] ?></h1>
@@ -251,11 +260,6 @@ include "../../include/header.php";
 
 		<p><?php echo $lang["action-title_see_wiki_for_advanced_options"]; ?></p>
 
-		<div class="Question">
-			<label for="fixed_theme"><?php echo $lang["property-fixed_theme"]; ?></label>
-			<input name="fixed_theme" type="text" class="stdwidth" value="<?php echo $record['fixed_theme']; ?>">
-			<div class="clearerleft"></div>
-		</div>
 
 		<div class="Question">
 			<label for="search_filter"><?php echo $lang["property-search_filter"]; ?></label>
@@ -285,6 +289,7 @@ include "../../include/header.php";
 			<div class="clearerleft"></div>
 		</div>
 
+		<?php if (!$execution_lockout) { ?>
 		<div class="Question">
 			<label for="config_options"><?php echo $lang["property-override_config_options"]; ?></label>
 			<textarea name="config_options" id="configOptionsBox" class="stdwidth" rows="12" cols="50"><?php echo $record['config_options']; ?></textarea>
@@ -317,6 +322,7 @@ include "../../include/header.php";
 <?php
 		}
 ?>		</div>
+		<?php } ?>
 
 		<div class="Question">
 			<label for="welcome_message"><?php echo $lang["property-email_welcome_message"]; ?></label>

@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php";
 include "../include/resource_functions.php";
 include "../include/search_functions.php";
@@ -74,7 +74,7 @@ if (!checkperm("t")) {
 	} 
 
 ?>
-<p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl . "/pages/" . $link?>">&lt;&nbsp;<?php echo $lang["backtothemes"]?></a></p>
+<p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl . "/pages/" . $link?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtothemes"]?></a></p>
 <?php
 
 ?>

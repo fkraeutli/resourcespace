@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 
 if (!checkperm("a"))
@@ -74,7 +74,7 @@ function DrawOption($permission,$description,$reverse=false,$reload=false)
 ?>
 <div class="BasicsBox"> 	
 	<p>
-		<a href="<?php echo $baseurl_short; ?>pages/admin/admin_group_management_edit.php<?php echo $url_params; ?>" onclick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php
+		<a href="<?php echo $baseurl_short; ?>pages/admin/admin_group_management_edit.php<?php echo $url_params; ?>" onclick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php
 		echo $lang['page-title_user_group_management_edit']; ?></a>
 	</p>	
 	<h1><?php echo $lang['page-title_user_group_permissions_edit'] ?></h1>
@@ -212,8 +212,15 @@ DrawOption("n", $lang["can_tag_resources_using_speed_tagging"]);
 
 DrawOption("b", $lang["enable_bottom_collection_bar"], true);
 DrawOption("h", $lang["can_publish_collections_as_themes"],false,true);
-if(in_array("h",$permissions)){DrawOption("hdta",$lang["manage_all_dash_h"],true,false);}
-else {DrawOption("dta",$lang["manage_all_dash"],false,false);}
+if(in_array('h', $permissions))
+	{
+	DrawOption('hdta', $lang['manage_all_dash_h'], true, false);
+	DrawOption('hdt_ug', $lang['manage_user_group_dash_tiles'], false, false);
+	}
+else
+	{
+	DrawOption('dta', $lang['manage_all_dash'], false, false);
+	}
 DrawOption("dtu",$lang["manage_own_dash"],true,false);
 
 # ------------ Access to theme categories
@@ -286,6 +293,7 @@ else
 	$permissions_done[]="k";
 	$permissions_done[]="a";	
 	}
+DrawOption('ex', $lang['permission_manage_external_shares']);
 ?>				<tr class="ListviewTitleStyle">
 					<td colspan=3 class="permheader"><?php echo $lang["other"] ?></td>
 				</tr>

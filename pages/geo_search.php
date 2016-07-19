@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; 
 include "../include/resource_functions.php";
 include "../include/header.php";
@@ -49,7 +49,22 @@ notice: function (bounds) {
     SetCookie("geobound",map.getCenter().lon + "," + map.getCenter().lat + "," + map.getZoom()); 
     
     // Specially encoded search string to avoid keyword splitting
-	window.location.href="<?php echo $baseurl_short?>pages/search.php?search=!geo" + (bl.lat + "b" + bl.lon + "t" + tr.lat + "b" + tr.lon).replace(/\-/gi,'m').replace(/\./gi,'p');
+    var url="<?php echo $baseurl_short?>pages/search.php?search=!geo" + (bl.lat + "b" + bl.lon + "t" + tr.lat + "b" + tr.lon).replace(/\-/gi,'m').replace(/\./gi,'p');
+
+<?php
+// Show results in a modal
+if($geo_search_modal_results)
+    {
+    ?>
+    ModalClose();
+    ModalLoad(url);
+
+    return;
+    <?php
+    }
+    ?>
+    window.location.href=url;
+	
 }
     });map.addControl(control);
 jQuery('#UICenter').scroll(function() {

@@ -7,7 +7,7 @@ foreach ($_POST as $key => $value) {$$key = stripslashes(utf8_decode(trim($value
 
 // create new PDF document
 include('../../include/db.php');
-include('../../include/general.php');
+include_once('../../include/general.php');
 include('../../include/authenticate.php');
 include('../../include/search_functions.php');
 include('../../include/resource_functions.php');
@@ -71,7 +71,6 @@ if (isset($print_contact_title)){
 function contact_sheet_add_fields($resourcedata)
 	{
 	global $pdf, $n, $getfields, $sheetstyle, $imagesize, $refnumberfontsize, $leading, $csf, $pageheight, $currentx, $currenty, $topx, $topy, $bottomx, $bottomy, $logospace, $deltay,$width,$config_sheetsingle_include_ref,$contactsheet_header,$cellsize,$ref,$pagewidth; 
-	//exit (print_r($getfields));
 
 	if ($sheetstyle=="single" && $config_sheetsingle_include_ref=="true"){
 		$pdf->SetY($bottomy);
@@ -94,17 +93,15 @@ function contact_sheet_add_fields($resourcedata)
 	
 		if ($sheetstyle=="thumbnails") 
 			{
-			$pdf->Cell($imagesize,(($refnumberfontsize+$leading)/72),$value,0,2,'L',0,'',1);
-			//if ($ff==2){echo print_r($getfields) . " " . $pdf->GetY();exit();}
-			
+			$pdf->Cell($imagesize,(($refnumberfontsize+$leading)/72),$value,0,2,'L',0,'',1);			
 			$bottomy=$pdf->GetY();
 			$bottomx=$pdf->GetX();
 			}
 		else if ($sheetstyle=="list")
 			{
-			
-			$pdf->SetXY($pdf->GetX()+$imagesize+0.1,$pdf->GetY());
+			$pdf->SetXY($pdf->GetX()+$imagesize+0.1,$pdf->GetY()+(0.2*($ff+$deltay)));
 			$pdf->MultiCell($pagewidth-3,0.15,$value,0,"L");
+			$pdf->SetXY($currentx,$currenty);
 			}
 		else if ($sheetstyle=="single")
 			{
@@ -121,6 +118,7 @@ function contact_sheet_add_fields($resourcedata)
 			$raw_value = sql_query($query);
 
 			// Default value:
+			if (isset($raw_value[0])){
 			$value = $raw_value[0]['value'];
 			// When values have been saved using CKEditor make sure to remove html tags and decode html entitities:
 			if($raw_value[0]['field_type'] == '8')
@@ -129,6 +127,7 @@ function contact_sheet_add_fields($resourcedata)
 				$value = mb_convert_encoding($value, 'UTF-8', 'HTML-ENTITIES');
 				}
 			$pdf->MultiCell($pagewidth-2,0,$value,'','L',false,1);		
+			}
 			}
 			
 		}
@@ -182,12 +181,12 @@ function contact_sheet_add_image()
 		{
 		$pdf->Image($imgpath,$posx,$posy,$imagewidth,$imageheight,$preview_extension,'',$nextline,false,300,$align,false,false,0);
 		}	
-			
+	
 	$bottomy=$pdf->GetY();
 	# Add spacing cell
 	if ($sheetstyle=="list")
 		{		
-		$pdf->Cell($cellsize[0],0.5,'',0,0);		
+		$pdf->Cell($cellsize[0],$cellsize[1],'',0,0);    
 		}
 	/*else if ($sheetstyle=="single")
 		{		
@@ -349,6 +348,7 @@ for ($n=0;$n<count($result);$n++){
 	if ($ref!==false){
 		# Find image
 		# Load access level
+		
 		$access=get_resource_access($result[$n]); // feed get_resource_access the resource array rather than the ref, since access is included.
 		$use_watermark=check_use_watermark();
 		$imgpath = get_resource_path($ref,true,$imgsize,false,$preview_extension,-1,1,$use_watermark);
@@ -523,3 +523,5 @@ else{
 	}
 $pdf->Output(i18n_get_collection_name($collectiondata).".pdf","D");
 }
+
+hook("endscript");

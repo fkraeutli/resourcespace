@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 include_once '../../include/config_functions.php';
 
@@ -10,21 +10,6 @@ if(isset($anonymous_login) && ($anonymous_login == $username))
     {
     header('HTTP/1.1 401 Unauthorized');
     die('Permission denied!');
-    }
-
-$userpreferences_plugins= array();
-$plugin_names=array();
-$plugins_dir = dirname(__FILE__)."/../../plugins/";
-foreach($active_plugins as $plugin)
-    {
-    $plugin = $plugin["name"];
-    array_push($plugin_names,trim(mb_strtolower($plugin)));
-    $plugin_yaml = get_plugin_yaml($plugins_dir.$plugin.'/'.$plugin.'.yaml', false);
-    if(isset($plugin_yaml["userpreferencegroup"]))
-        {
-        $upg = trim(mb_strtolower($plugin_yaml["userpreferencegroup"]));
-        $userpreferences_plugins[$upg][$plugin]=$plugin_yaml;
-        }
     }
 
 if(getvalescaped("quicksave",FALSE))
@@ -48,23 +33,6 @@ if(getvalescaped("quicksave",FALSE))
             exit("1");
             }
         }
-    if(in_array("col-".$ctheme,$plugin_names))
-        {
-        // check that record exists for user
-        if(empty($userpreferences))
-            {
-            // create a record
-            sql_query("INSERT into user_preferences (user, parameter, `value`) VALUES (" . $userref . ", 'colour_theme', '" . escape_check(preg_replace('/^col-/', '', $ctheme)) . "');");
-            rs_setcookie("colour_theme", escape_check(preg_replace("/^col-/","",$ctheme)),100, "/", "", substr($baseurl,0,5)=="https", true);
-            exit("1");
-            }
-        else
-            {
-            sql_query("UPDATE user_preferences SET `value` = '" . escape_check(preg_replace('/^col-/', '', $ctheme)) . "' WHERE user = " . $userref . " AND parameter = 'colour_theme';");
-            rs_setcookie("colour_theme", escape_check(preg_replace("/^col-/","",$ctheme)),100, "/", "", substr($baseurl,0,5)=="https", true);
-            exit("1");
-            }
-        }
 
     exit("0");
     }
@@ -77,101 +45,6 @@ include "../../include/header.php";
     <h1><?php echo $lang["userpreferences"]?></h1>
     <p><?php echo $lang["modifyuserpreferencesintro"]?></p>
     
-    <?php
-    /* Display */
-    $options_available = 0; # Increment this to prevent a "No options available" message
-
-    /* User Colour Theme Selection */
-    if((isset($userfixedtheme) && $userfixedtheme=="") && isset($userpreferences_plugins["colourtheme"]) && count($userpreferences_plugins["colourtheme"])>0)
-        {
-        ?>
-        <h2><?php echo $lang['userpreference_colourtheme']; ?></h2>
-        <div class="Question">
-            <label for="">
-                <?php echo $lang["userpreferencecolourtheme"]; ?>
-            </label>
-            <script>
-                function updateColourTheme(theme) {
-                    jQuery.post(
-                        window.location,
-                        {"colour_theme":theme,"quicksave":"true"},
-                        function(data){
-                            location.reload();
-                        });
-                }
-            </script>
-            <?php
-            # If there are multiple options provide a radio button selector
-            if(count($userpreferences_plugins["colourtheme"])>1)
-                { ?>
-                <table id="" class="radioOptionTable">
-                    <tbody>
-                        <tr>
-                        <!-- Default option -->
-                        <td valign="middle">
-                            <input 
-                                type="radio" 
-                                name="defaulttheme" 
-                                value="default" 
-                                onChange="updateColourTheme('default');"
-                                <?php
-                                    if
-                                    (
-                                        (isset($userpreferences["colour_theme"]) && $userpreferences["colour_theme"]=="") 
-                                        || 
-                                        (!isset($userpreferences["colour_theme"]) && $defaulttheme=="")
-                                    ) { echo "checked";}
-                                ?>
-                            />
-                        </td>
-                        <td align="left" valign="middle">
-                            <label class="customFieldLabel" for="defaulttheme">
-                                <?php echo $lang["default"];?>
-                            </label>
-                        </td>
-                        <?php
-                        foreach($userpreferences_plugins["colourtheme"] as $colourtheme)
-                            { ?>
-                            <td valign="middle">
-                                <input 
-                                    type="radio" 
-                                    name="defaulttheme" 
-                                    value="<?php echo preg_replace("/^col-/","",$colourtheme["name"]);?>" 
-                                    onChange="updateColourTheme('<?php echo preg_replace("/^col-/","",$colourtheme["name"]);?>');"
-                                    <?php
-                                        if
-                                        (
-                                            (isset($userpreferences["colour_theme"]) && "col-".$userpreferences["colour_theme"]==$colourtheme["name"]) 
-                                            || 
-                                            (!isset($userpreferences["colour_theme"]) && $defaulttheme==$colourtheme["name"])
-                                        ) { echo "checked";}
-                                    ?>
-                                />
-                            </td>
-                            <td align="left" valign="middle">
-                                <label class="customFieldLabel" for="defaulttheme">
-                                    <?php echo $colourtheme["name"];?>
-                                </label>
-                            </td>
-                            <?php
-                            }
-                        ?>
-                        </tr>
-                    </tbody>
-                </table>
-                <?php
-                }
-            ?>
-            <div class="clearerleft"> </div>
-        </div>
-        <?php
-        $options_available++;
-        }
-    /* End User Colour Theme Selection */
-
-
-    ?>
-
 <div class="CollapsibleSections">
     <?php
     // Result display section
@@ -263,7 +136,7 @@ include "../../include/header.php";
         true
     );
     $page_def[] = config_add_single_select('default_perpage', $lang['userpreference_default_perpage_label'], array(24, 48, 72, 120, 240), false, 300, '', true);
-    
+
     // Default Display
     $default_display_array = array();
     if($smallthumbs || $GLOBALS['default_display'] == 'smallthumbs')
@@ -293,19 +166,60 @@ include "../../include/header.php";
     $page_def[] = config_add_boolean_select('use_checkboxes_for_selection', $lang['userpreference_use_checkboxes_for_selection_label'], $enable_disable_options, 300, '', true);
     $page_def[] = config_add_boolean_select('resource_view_modal', $lang['userpreference_resource_view_modal_label'], $enable_disable_options, 300, '', true);
     $page_def[] = config_add_html('</div>');
-    ?>
 
-    <?php
+
     // User interface section
     $page_def[] = config_add_html('<h2 class="CollapsibleSectionHead">' . $lang['userpreference_user_interface'] . '</h2><div id="UserPreferenceUserInterfaceSection" class="CollapsibleSection">');
     $page_def[] = config_add_single_select('thumbs_default', $lang['userpreference_thumbs_default_label'], array('show' => $lang['showthumbnails'], 'hide' => $lang['hidethumbnails']), true, 300, '', true);
     $page_def[] = config_add_boolean_select('basic_simple_search', $lang['userpreference_basic_simple_search_label'], $enable_disable_options, 300, '', true);
     $page_def[] = config_add_html('</div>');
 
-    // Email section
-    $page_def[] = config_add_html('<h2 class="CollapsibleSectionHead">' . $lang['email'] . '</h2><div id="UserPreferenceEmailSection" class="CollapsibleSection">');
-    $page_def[] = config_add_boolean_select('cc_me', $lang['userpreference_cc_me_label'], $enable_disable_options, 300, '', true);
-    $page_def[] = config_add_html('</div>');
+
+    // Email section, only show if user has got an email address
+	if ($useremail!="")
+		{
+		$page_def[] = config_add_html('<h2 class="CollapsibleSectionHead">' . $lang['email'] . '</h2><div id="UserPreferenceEmailSection" class="CollapsibleSection">');
+		$page_def[] = config_add_boolean_select('cc_me', $lang['userpreference_cc_me_label'], $enable_disable_options, 300, '', true);
+		$page_def[] = config_add_boolean_select('email_user_notifications', $lang['userpreference_email_me_label'], $enable_disable_options, 300, '', true);
+		$page_def[] = config_add_boolean_select('email_and_user_notifications', $lang['user_pref_email_and_user_notifications'], $enable_disable_options, 300, '', true);
+		$page_def[] = config_add_boolean_select('user_pref_daily_digest', $lang['user_pref_daily_digest'], $enable_disable_options, 300, '', true);
+		$page_def[] = config_add_boolean_select('user_pref_daily_digest_mark_read', $lang['user_pref_daily_digest_mark_read'], $enable_disable_options, 300, '', true);
+
+		//$page_def[] = config_add_boolean_select('email_user_daily_digest', $lang['userpreference_email_digest_label'], $enable_disable_options, 300, '', true);
+		$page_def[] = config_add_html('</div>');
+		}
+
+
+	// System notifications section - used to disable system generated messages 
+	$page_def[] = config_add_html('<h2 class="CollapsibleSectionHead">' . $lang['mymessages'] . '</h2><div id="UserPreferenceAdminSection" class="CollapsibleSection">');
+	$page_def[] = config_add_boolean_select('user_pref_show_notifications', $lang['user_pref_show_notifications'], $enable_disable_options, 300, '', true);
+    $page_def[] = config_add_boolean_select('user_pref_resource_notifications', $lang['userpreference_resource_notifications'], $enable_disable_options, 300, '', true);
+	if(checkperm("a"))
+		{
+		$page_def[] = config_add_boolean_select('user_pref_system_management_notifications', $lang['userpreference_system_management_notifications'], $enable_disable_options, 300, '', true);
+		}
+	
+	if(checkperm("u"))
+		{		
+		$page_def[] = config_add_boolean_select('user_pref_user_management_notifications', $lang['userpreference_user_management_notifications'], $enable_disable_options, 300, '', true);
+		}
+	if(checkperm("R"))
+		{	
+		$page_def[] = config_add_boolean_select('user_pref_resource_access_notifications', $lang['userpreference_resource_access_notifications'], $enable_disable_options, 300, '', true);
+		}
+
+	$page_def[] = config_add_html('</div>');
+
+
+    // Metadata section
+    if(!$force_exiftool_write_metadata)
+        {
+        $page_def[] = config_add_html('<h2 class="CollapsibleSectionHead">' . $lang['metadata'] . '</h2><div id="UserPreferenceMetadataSection" class="CollapsibleSection">');
+        $page_def[] = config_add_boolean_select('exiftool_write_option', $lang['userpreference_exiftool_write_metadata_label'], $enable_disable_options, 300, '', true);
+        $page_def[] = config_add_html('</div>');
+        }
+
+
 
     // Let plugins hook onto page definition and add their own configs if needed
     // or manipulate the list
@@ -315,11 +229,47 @@ include "../../include/header.php";
         $page_def = $plugin_specific_definition;
         }
 
+
+    // Process autosaving requests
+    // Note: $page_def must be defined by now in order to make sure we only save options that we've defined
+    if('true' === getval('ajax', '') && 'true' === getval('autosave', ''))
+        {
+        // Get rid of any output we have so far as we don't need to return it
+        ob_end_clean();
+
+        $response['success'] = true;
+        $response['message'] = '';
+
+        $autosave_option_name  = getvalescaped('autosave_option_name', '');
+        $autosave_option_value = getvalescaped('autosave_option_value', '');
+
+        // Search for the option name within our defined (allowed) options
+        // if it is not there, error and don't allow saving it
+        $page_def_option_index = array_search($autosave_option_name, array_column($page_def, 1));
+        if(false === $page_def_option_index)
+            {
+            $response['success'] = false;
+            $response['message'] = $lang['systemconfig_option_not_allowed_error'];
+
+            echo json_encode($response);
+            exit();
+            }
+
+        if(!set_config_option($userref, $autosave_option_name, $autosave_option_value))
+            {
+            $response['success'] = false;
+            }
+
+        echo json_encode($response);
+        exit();
+        }
+
+
     config_generate_html($page_def);
     ?>
 </div>
     <script>registerCollapsibleSections();</script>
-    <?php config_generate_AutoSaveConfigOption_function($baseurl . '/pages/ajax/user_preferences.php'); ?>
+    <?php config_generate_AutoSaveConfigOption_function($baseurl . '/pages/user/user_preferences.php'); ?>
 </div>
 
 <?php

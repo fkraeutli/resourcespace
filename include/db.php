@@ -15,11 +15,15 @@
 
 # ensure no caching (dynamic site)
 
-# Functions used for debugging via System Console
-include_once "debug_functions.php";
 
-# Functions used for activity logging
-include_once "log_functions.php";
+// Include core functions:
+// Functions used for debugging via System Console
+include_once 'debug_functions.php';
+
+// Functions used for activity logging
+include_once 'log_functions.php';
+include_once 'file_functions.php';
+
 
 # Switch on output buffering.
 ob_start(null,4096);
@@ -111,37 +115,55 @@ if (!isset($storagedir)) {$storagedir=dirname(__FILE__)."/../filestore";}
 if (!isset($storageurl)) {$storageurl=$baseurl."/filestore";}
 
 $db = null;
-function sql_connect() {
-	global $use_mysqli,$db,$mysql_server,$mysql_username,$mysql_password,$mysql_db,$mysql_charset,$mysql_force_strict_mode;
+function sql_connect() 
+    {
+    global $use_mysqli,$db,$mysql_server,$mysql_username,$mysql_password,$mysql_db,$mysql_charset,$mysql_force_strict_mode;
 	# *** CONNECT TO DATABASE ***
-	if ($use_mysqli){
-	$db=mysqli_connect($mysql_server,$mysql_username,$mysql_password,$mysql_db);
-	} else {
-	mysql_connect($mysql_server,$mysql_username,$mysql_password);
-	mysql_select_db($mysql_db);
-	}
-
-	// If $mysql_charset is defined, we use it
-	// else, we use the default charset for mysql connection.
+	if ($use_mysqli)
+	    {
+	    $db=mysqli_connect($mysql_server,$mysql_username,$mysql_password,$mysql_db);
+	    } 
+	else 
+	    {
+	    mysql_connect($mysql_server,$mysql_username,$mysql_password);
+	    mysql_select_db($mysql_db);
+	    }
+	    // If $mysql_charset is defined, we use it
+	    // else, we use the default charset for mysql connection.
 	if(isset($mysql_charset))
-		{
+	    {
 		if($mysql_charset)
-			{
-			if ($use_mysqli){
-				mysqli_set_charset($db,$mysql_charset);
+		    {
+			if ($use_mysqli)
+			    {
+			    mysqli_set_charset($db,$mysql_charset);
 				}
-			else {
+			else 
+			    {
 				mysql_set_charset($mysql_charset);
-				}
+			    }
 			}
 		}
-
-	# Set MySQL Strict Mode (if configured)
-	if ($mysql_force_strict_mode)
-		{
-		sql_query("SET SESSION sql_mode='STRICT_ALL_TABLES'",false,-1,true,0);	
-		}
-}
+    # Set MySQL Strict Mode (if configured)    
+    if ($mysql_force_strict_mode)    
+        {
+        sql_query("SET SESSION sql_mode='STRICT_ALL_TABLES'",false,-1,true,0);	
+        }
+    else
+        {
+        # Determine MySQL version
+        $mysql_version = sql_query('select LEFT(VERSION(),3) as ver');
+        # Set sql_mode for MySQL 5.7+
+        if (version_compare($mysql_version[0]['ver'], '5.6', '>')) 
+            {
+             $sql_mode_current = sql_query('select @@SESSION.sql_mode');
+             $sql_mode_string = implode(" ", $sql_mode_current[0]);
+             $sql_mode_array_new = array_diff(explode(",",$sql_mode_string), array("ONLY_FULL_GROUP_BY", "NO_ZERO_IN_DATE", "NO_ZERO_DATE"));
+             $sql_mode_string_new = implode (",", $sql_mode_array_new);
+             sql_query("SET SESSION sql_mode = '$sql_mode_string_new'");           
+             }
+        }    
+    }
 sql_connect();
 
 #if (function_exists("set_magic_quotes_runtime")) {@set_magic_quotes_runtime(0);}
@@ -181,7 +203,7 @@ if ($use_plugins_manager)
 				{
 				# Installed plugin isn't marked as installed in the DB.  Update it now.
 				# Check if there's a plugin.yaml file to get version and author info.
-				$plugin_yaml_path = dirname(__FILE__)."/../plugins/{$plugin_name}/{$plugin_name}.yaml";
+				$plugin_yaml_path = get_plugin_path($plugin_name) . "/{$plugin_name}.yaml";
 				$p_y = get_plugin_yaml($plugin_yaml_path, false);
 				# Write what information we have to the plugin DB.
 				sql_query("REPLACE plugins(inst_version, author, descrip, name, info_url, update_url, config_url, priority) ".
@@ -197,24 +219,24 @@ if ($use_plugins_manager)
     $mysql_verbatim_queries = $mysql_vq;
 
     $active_yaml = array();
-	$plugins = array();
-	foreach($active_plugins as $plugin)
-		{
-		# Check group access && YAML, only enable for global access at this point
-		$plugin_yaml_path = dirname(__FILE__)."/../plugins/".$plugin["name"]."/".$plugin["name"].".yaml";
-		$py = get_plugin_yaml($plugin_yaml_path, false);
-		array_push($active_yaml,$py);
-		if ($plugin['enabled_groups']=='' && !isset($py["userpreferencegroup"]))
-			{
-			# Add to the plugins array if not already present which is what we are working with
-			$plugins[]=$plugin['name'];
-			}
-		}
+    $plugins = array();
+    foreach($active_plugins as $plugin)
+	    {
+	    # Check group access && YAML, only enable for global access at this point
+	    $plugin_yaml_path = get_plugin_path($plugin["name"])."/".$plugin["name"].".yaml";
+	    $py = get_plugin_yaml($plugin_yaml_path, false);
+	    array_push($active_yaml,$py);
+	    if ($plugin['enabled_groups'] == '')
+		    {
+		    # Add to the plugins array if not already present which is what we are working with
+		    $plugins[]=$plugin['name'];
+		    }
+	    }
 
 	for ($n=count($active_plugins)-1;$n>=0;$n--)
 		{
 		$plugin=$active_plugins[$n];
-		if ($plugin['enabled_groups']=='' && !isset($active_yaml[$n]["userpreferencegroup"]))
+		if ($plugin['enabled_groups'] == '')
 			{
 			include_plugin_config($plugin['name'], $plugin['config'], $plugin['config_json']);
 			}
@@ -234,7 +256,11 @@ process_config_options();
 # Include the appropriate language file
 $pagename=safe_file_name(str_replace(".php","",pagename()));
 
-$language=setLanguage();
+// Allow plugins to set $language from config as we cannot run hooks at this point
+if(!isset($language))
+	{
+	$language = setLanguage();
+	}
 
 # Fix due to rename of US English language file
 if (isset($language) && $language=="us") {$language="en-US";}
@@ -255,12 +281,12 @@ for ($n=0;$n<count($plugins);$n++)
 	hook("afterregisterplugin");
 	}
 
-	
 # Register their languages in reverse order
 for ($n=count($plugins)-1;$n>=0;$n--)
 	{
 	register_plugin_language($plugins[$n]);
 	}
+
 global $suppress_headers;
 # Set character set.
 if (($pagename!="download") && ($pagename!="graph") && !$suppress_headers) {header("Content-Type: text/html; charset=UTF-8");} // Make sure we're using UTF-8.
@@ -331,6 +357,14 @@ if (file_exists($stemming_file)) {include ($stemming_file);}
 $hook_cache = array();
 $hook_cache_hits = 0;
 
+# Load the sysvars into an array. Useful so we can check migration status etc.
+$systemvars = sql_query("SELECT name, value FROM sysvars");
+$sysvars = array();
+foreach($systemvars as $systemvar)
+	{
+	$sysvars[$systemvar["name"]] = $systemvar["value"];
+	}
+
 function hook($name,$pagename="",$params=array(),$last_hook_value_wins=false)
 	{
 	# Plugin architecture.  Look for hooks with this name (and corresponding page, if applicable) and run them sequentially.
@@ -379,7 +413,7 @@ function hook($name,$pagename="",$params=array(),$last_hook_value_wins=false)
 					// We merge the cached result with the new result from the plugin and remove any duplicates
 					// Note: in custom plugins developers should work with the full array (ie. superset) rather than just a sub-set of the array.
 					//       If your plugin needs to know if the array has been modified previously by other plugins use the global variable "hook_return_value"
-					$GLOBALS['hook_return_value'] = array_unique(array_merge_recursive($GLOBALS['hook_return_value'], $function_return_value), SORT_REGULAR);
+					$GLOBALS['hook_return_value'] = array_values(array_unique(array_merge_recursive($GLOBALS['hook_return_value'], $function_return_value), SORT_REGULAR));
 					}
 				elseif (is_string($function_return_value))
 					{
@@ -441,6 +475,39 @@ function db_begin_transaction()
 		}
 	}
 
+# Used to perform the same DML operation over-and-over-again without the hit of preparing the statement every time.
+# Useful for re-indexing fields etc.
+# Example usage:
+#
+# sql_query_prepared('INSERT INTO `my_table`(`colint`,`colstring`) VALUES (?,?)',array('is',10,'Ten');
+#
+# Where first array parameter indicates types of bind data:
+# i=integer
+# s=string
+function sql_query_prepared($sql,$bind_data)
+    {
+    global $prepared_statement_cache,$db;
+    if(!isset($prepared_statement_cache[$sql]))
+        {
+        if(!isset($prepared_statement_cache))
+            {
+            $prepared_statement_cache=array();
+            }
+        $prepared_statement_cache[$sql]=$db->prepare($sql);
+        if($prepared_statement_cache[$sql]===false)
+            {
+            die('Bad prepared SQL statement:' . $sql);
+            }
+        }
+    $bind_data_processed = array();
+    foreach($bind_data as $key => $value)
+        {
+        $bind_data_processed[$key] = &$bind_data[$key];
+        }
+    call_user_func_array(array($prepared_statement_cache[$sql], 'bind_param'), $bind_data_processed);
+    mysqli_stmt_execute($prepared_statement_cache[$sql]);
+    }
+
 # Tell the database to commit the current transaction.
 function db_end_transaction()
 	{
@@ -451,7 +518,7 @@ function db_end_transaction()
 		}
 	}
 
-function sql_query($sql,$cache=false,$fetchrows=-1,$dbstruct=true, $logthis=2, $reconnect=true)
+function sql_query($sql,$cache=false,$fetchrows=-1,$dbstruct=true, $logthis=2, $reconnect=true, $fetch_specific_columns=false)
     {
     # sql_query(sql) - execute a query and return the results as an array.
 	# Database functions are wrapped in this way so supporting a database server other than MySQL is 
@@ -591,20 +658,44 @@ function sql_query($sql,$cache=false,$fetchrows=-1,$dbstruct=true, $logthis=2, $
 		{
 		if ($mysql_verbatim_queries)		// no need to do clean up on every cell
 			{
-			$return_rows[$return_row_count]=$result_row;		// simply dump the entire row into the return results set
+			if($fetch_specific_columns===false)
+                {
+                $return_rows[$return_row_count]=$result_row;		// simply dump the entire row into the return results set
+                }
+            else
+                {
+                foreach($fetch_specific_columns as $fetch_specific_column)
+                    {
+                    $return_rows[$return_row_count][$fetch_specific_column]=$result_row[$fetch_specific_column];        // dump the specific column into the results set
+                    }
+                }
 			}
 		else
 			{
-			while (list($name,$value)=each($result_row))		// we need to clean up each cell
-				{
-				$return_rows[$return_row_count][$name]=str_replace("\\","",stripslashes($value));		// iterate through each cell cleaning up
-				}
-			}
+            if($fetch_specific_columns===false)     // for all columns
+                {
+                foreach ($result_row as $name => $value)
+                    {
+                    $return_rows[$return_row_count][$name] = str_replace("\\", "", stripslashes($value));        // iterate through each cell cleaning up
+                    }
+                }
+            else
+                {
+                foreach($fetch_specific_columns as $fetch_specific_column)      // for specific columns
+                    {
+                    $return_rows[$return_row_count][$fetch_specific_column]=str_replace("\\", "", stripslashes($result_row[$fetch_specific_column]));       // iterate through each cell cleaning up
+                    }
+                }
+            }
 		$return_row_count++;
 		}
-	
+
 	if ($fetchrows==-1)		// we do not care about the number of rows returned so get out of here
 		{
+        if($use_mysqli)
+            {
+            mysqli_free_result($result);
+            }
 		return $return_rows;
 		}
 	
@@ -612,6 +703,11 @@ function sql_query($sql,$cache=false,$fetchrows=-1,$dbstruct=true, $logthis=2, $
 	# is still correct (even though these rows won't be shown).
 	
 	$query_returned_row_count=$use_mysqli ? mysqli_num_rows($result) : mysql_num_rows($result);		// get the number of rows returned from the query
+
+    if($use_mysqli)
+        {
+        mysqli_free_result($result);
+        }
 	
 	if ($return_row_count<$query_returned_row_count)
 		{
@@ -656,9 +752,9 @@ function sql_insert_id()
 	}
 	}
 
-function check_db_structs()
+function check_db_structs($verbose=false)
 	{
-	CheckDBStruct("dbstruct");
+	CheckDBStruct("dbstruct",$verbose);
 	global $plugins;
 	for ($n=0;$n<count($plugins);$n++)
 		{
@@ -667,7 +763,7 @@ function check_db_structs()
 	hook("checkdbstruct");
 	}
 
-function CheckDBStruct($path)
+function CheckDBStruct($path,$verbose=false)
 	{
 	# Check the database structure against the text files stored in $path.
 	# Add tables / columns / data / indices as necessary.
@@ -725,6 +821,9 @@ function CheckDBStruct($path)
 				}
 				debug($sql);
 
+				# Verbose mode, used for better output from the test script.
+				if ($verbose) {echo "$table ";ob_flush();}
+				
 				sql_query("create table $table ($sql)",false,-1,false);
 				
 				# Add initial data
@@ -837,6 +936,8 @@ function CheckDBStruct($path)
 										(count($matchbase)==3 && count($matchexisting)==3 && $matchbase[1] == $matchexisting[1] && $matchbase[2] > $matchexisting[2])
 										 ||
 										(stripos($basecoltype,"text")!==false && stripos($existingcoltype,"text")===false)
+										||
+										(stripos($basecoltype,"BIGINT")!==false && stripos($existingcoltype,"INT")!==false)
 									       )
 										{        
 										debug("DBSTRUCT - updating column " . $col[0] . " in table " . $table . " from " . $existing[$n]["Type"] . " to " . str_replace("§",",",$col[1]) );
@@ -986,9 +1087,13 @@ function nicedate($date,$time=false,$wordy=true)
 	{
 	# format a MySQL ISO date
 	# Always use the 'wordy' style from now on as this works better internationally.
-	global $lang,$date_d_m_y;
+	global $lang,$date_d_m_y,$date_yyyy;
 	$y = substr($date,0,4);
-	if (($y=="") || ($y=="0000")) return "-";
+	if(!$date_yyyy)
+	{
+		$y = substr($y, 2, 2);
+	}
+	if ( $y=="" ) return "-";
 	$m = @$lang["months"][substr($date,5,2)-1];
 	if ($m=="") return $y;
 	$d = substr($date,8, 2);
@@ -996,10 +1101,10 @@ function nicedate($date,$time=false,$wordy=true)
 	$t = $time ? (" @ "  . substr($date,11,5)) : "";
 	if($date_d_m_y)
 		{
-		return $d . " " . $m . " " . substr($y, 2, 2) . $t;
+		return $d . " " . $m . " " . $y . $t;
 		}
 	else{
-		return $m . " " . $d . " " . substr($y, 2, 2) . $t;
+		return $m . " " . $d . " " . $y . $t;
 		}
 	}	
 }
@@ -1091,7 +1196,7 @@ function http_get_preferred_language($strict_mode=false)
 
 function setLanguage()
 	{
-	global $browser_language,$disable_languages,$defaultlanguage,$languages;
+	global $browser_language,$disable_languages,$defaultlanguage,$languages,$global_cookies,$baseurl_short;
 	$language="";
 	if (isset($_GET["language_set"]))
 	    {
@@ -1139,7 +1244,7 @@ function checkperm($perm)
     if (in_array($perm,$userpermissions)) {return true;} else {return false;}
     }
 
-// check if passed user is allowed to edit users
+// Check if user is allowed to edit user with passed reference
 function checkperm_user_edit($user)
 	{
 	if (!checkperm('u'))    // does not have edit user permission
@@ -1150,16 +1255,19 @@ function checkperm_user_edit($user)
 		{
 		$user=get_user($user);
 		}
-	$usergroup=$user['usergroup'];
-	if (!checkperm('U') || $usergroup == '')    // no user editing restriction, or is not defined so return true
+	$editusergroup=$user['usergroup'];
+	if (!checkperm('U') || $editusergroup == '')    // no user editing restriction, or is not defined so return true
 		{
 		return true;
 		}
-	global $U_perm_strict;
+	global $U_perm_strict, $usergroup;
+	// Get all the groups that the logged in user can manage 
 	$validgroups = sql_array("SELECT `ref` AS  'value' FROM `usergroup` WHERE " .
 		($U_perm_strict ? "FIND_IN_SET('{$usergroup}',parent)" : "(`ref`='{$usergroup}' OR FIND_IN_SET('{$usergroup}',parent))")
 	);
-	return (in_array($usergroup, $validgroups));
+	
+	// Return true if the target user we are checking is in one of the valid groups
+	return (in_array($editusergroup, $validgroups));
 	}
 
 function pagename()
@@ -1282,22 +1390,6 @@ function get_ip()
 	}
 
 
-function safe_file_name($name)
-	{
-	# Returns a file name stipped of all non alphanumeric values
-	# Spaces are replaced with underscores
-	$alphanum="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
-	$name=str_replace(" ","_",$name);
-	$newname="";
-	for ($n=0;$n<strlen($name);$n++)
-		{
-		$c=substr($name,$n,1);
-		if (strpos($alphanum,$c)!==false) {$newname.=$c;}
-		}
-	$newname=substr($newname,0,30);
-	return $newname;
-	}
-
 if (!function_exists("daily_stat")){
 function daily_stat($activity_type,$object_ref)
 	{
@@ -1337,14 +1429,15 @@ function daily_stat($activity_type,$object_ref)
 }
 
 function include_plugin_config($plugin_name,$config="",$config_json="")
-	{
+    {
     global $mysql_charset;
-	$configpath = dirname(__FILE__)."/../plugins/" . $plugin_name . "/config/config.default.php";
-	if (file_exists($configpath)) {include $configpath;}
-
-	$configpath2 = dirname(__FILE__)."/../plugins/" . $plugin_name . "/config/config.php";
-	if (file_exists($configpath2)) {include $configpath2;}
-
+    
+    $pluginpath=get_plugin_path($plugin_name);
+    
+    $configpath = $pluginpath . "/config/config.default.php";
+    if (file_exists($configpath)) {include $configpath;}
+    $configpath = $pluginpath . "/config/config.php";
+    if (file_exists($configpath)) {include $configpath;}
 
     if ($config_json != "" && function_exists('json_decode'))
         {
@@ -1382,7 +1475,8 @@ function register_plugin_language($plugin)
     global $plugins,$language,$pagename,$lang,$applicationname;
     
     	# Include language file
-    	$langpath=dirname(__FILE__)."/../plugins/" . $plugin . "/languages/";
+    	$langpath=get_plugin_path($plugin) . "/languages/";
+	
     	if (file_exists($langpath . "en.php")) {include $langpath . "en.php";}
     	if ($language!="en")
     		{
@@ -1391,17 +1485,36 @@ function register_plugin_language($plugin)
     		@include $langpath . safe_file_name($language) . ".php";
     		}
     }
+    
+function get_plugin_path($plugin,$url=false)
+    {
+    # For the given plugin shortname, return the path on disk
+    # Supports plugins being in the filestore folder (for user uploaded plugins)
+    global $baseurl_short,$storagedir,$storageurl;
+    
+    # Standard location    
+    $pluginpath=dirname(__FILE__) . "/../plugins/" . $plugin;
+    if (file_exists($pluginpath)) {return ($url?$baseurl_short . "plugins/" . $plugin:$pluginpath);}
+
+    # Filestore location
+    $pluginpath=$storagedir . "/plugins/" . $plugin;
+    if (file_exists($pluginpath)) {return ($url?$storageurl . "/plugins/" . $plugin:$pluginpath);}
+    }
+    
 function register_plugin($plugin)
 	{
 	global $plugins,$language,$pagename,$lang,$applicationname;
 
 	# Also include plugin hook file for this page.
 	if ($pagename=="collections_frameless_loader"){$pagename="collections";}
-	$hookpath=dirname(__FILE__)."/../plugins/" . $plugin . "/hooks/" . $pagename . ".php";
+	
+	$pluginpath=get_plugin_path($plugin);
+	    
+	$hookpath=$pluginpath . "/hooks/" . $pagename . ".php";
 	if (file_exists($hookpath)) {include_once $hookpath;}
 	
 	# Support an 'all' hook
-	$hookpath=dirname(__FILE__)."/../plugins/" . $plugin . "/hooks/all.php";
+	$hookpath=$pluginpath . "/hooks/all.php";
 	if (file_exists($hookpath)) {include_once $hookpath;}
 	
 	return true;	
@@ -1482,8 +1595,15 @@ function get_resource_table_joins(){
 	return $return;
 	}
     
-function debug($text)
+function debug($text,$resource_log_resource_ref=null,$resource_log_code=LOG_CODE_TRANSFORMED)
 	{
+
+    # Update the resource log if resource reference passed.
+	if(!is_null($resource_log_resource_ref))
+        {
+        resource_log($resource_log_resource_ref,$resource_log_code,'','','',$text);
+        }
+
 	# Output some text to a debug file.
 	# For developers only
 	global $debug_log, $debug_log_override, $debug_log_location;
@@ -1494,11 +1614,23 @@ function debug($text)
 		{
 		$debugdir = dirname($debug_log_location);
 		if (!is_dir($debugdir)){mkdir($debugdir, 0755, true);}
+		}
+	else 
+		{
+		$debug_log_location=get_debug_log_dir() . "/debug.txt";
+		}
+	if(!file_exists($debug_log_location))
+		{
+		// Set the permissions if we can to prevent browser access (will not work on Windows)
+		$f=fopen($debug_log_location,"a");
+		chmod($debug_log_location,0333);
+		}
+    else
+        {
 		$f=fopen($debug_log_location,"a");
 		}
-	else {$f=fopen(get_debug_log_dir() . "/debug.txt","a");}
-	fwrite($f,date("Y-m-d H:i:s") . " " . $text . "\n");
-	fclose ($f);
+    fwrite($f,date("Y-m-d H:i:s") . " " . $text . "\n");
+    fclose ($f);
 	return true;
 	}
 	
@@ -1605,13 +1737,17 @@ function setup_user($userdata)
         # Given an array of user data loaded from the user table, set up all necessary global variables for this user
         # including permissions, current collection, config overrides and so on.
         
-	global $userpermissions,$usergroup,$usergroupname,$usergroupparent,$useremail,$userpassword,$userfullname,$userfixedtheme,$ip_restrict_group,$ip_restrict_user,$rs_session,$global_permissions,$userref,$username,$anonymous_user_session_collection,$global_permissions_mask,$user_preferences,$userrequestmode,$usersearchfilter,$usereditfilter,$userderestrictfilter,$hidden_collections,$userresourcedefaults,$userrequestmode,$request_adds_to_collection,$usercollection,$lang,$validcollection;
+    global $userpermissions, $usergroup, $usergroupname, $usergroupparent, $useremail, $userpassword, $userfullname, 
+           $ip_restrict_group, $ip_restrict_user, $rs_session, $global_permissions, $userref, $username, $useracceptedterms, $anonymous_user_session_collection, 
+           $global_permissions_mask, $user_preferences, $userrequestmode, $usersearchfilter, $usereditfilter, $userderestrictfilter, $hidden_collections, 
+           $userresourcedefaults, $userrequestmode, $request_adds_to_collection, $usercollection, $lang, $validcollection, $userpreferences;
 		
 	# Hook to modify user permissions
 	if (hook("userpermissions")){$userdata["permissions"]=hook("userpermissions");} 
-	
-	$userref=$userdata["ref"];
-        $username=$userdata["username"];
+
+    $userref           = $userdata['ref'];
+    $username          = $userdata['username'];
+    $useracceptedterms = $userdata['accepted_terms'];
 	
 	# Create userpermissions array for checkperm() function
 	$userpermissions=array_diff(array_merge(explode(",",trim($global_permissions)),explode(",",trim($userdata["permissions"]))),explode(",",trim($global_permissions_mask))); 
@@ -1623,7 +1759,6 @@ function setup_user($userdata)
         $useremail=$userdata["email"];
         $userpassword=$userdata["password"];
         $userfullname=$userdata["fullname"];
-	if (!isset($userfixedtheme)) {$userfixedtheme=$userdata["fixed_theme"];} # only set if not set in config.php
 
         $ip_restrict_group=trim($userdata["ip_restrict_group"]);
         $ip_restrict_user=trim($userdata["ip_restrict_user"]);
@@ -1675,9 +1810,8 @@ function setup_user($userdata)
 			sql_query("update user set current_collection='$usercollection' where ref='$userref'");
 			}
 		}
-	
-        
-        $usersearchfilter=$userdata["search_filter"];
+
+        $usersearchfilter=isset($userdata["search_filter_override"]) && $userdata["search_filter_override"]!='' ? $userdata["search_filter_override"] : $userdata["search_filter"];
         $usereditfilter=$userdata["edit_filter"];
         $userderestrictfilter=$userdata["derestrict_filter"];
         $hidden_collections=explode(",",$userdata["hidden_collections"]);

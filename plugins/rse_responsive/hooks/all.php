@@ -8,7 +8,9 @@ function HookRse_responsiveAllResponsivemeta() {
     <?php
 }
 function serveHeader() {
-    global $lang,$username,$pagename,$loginterms,$baseurl,$linkedheaderimgsrc,$allow_password_change,$userfullname,$username,$slimheader,$theme,$responsiveheaderimgsrc;
+    global $lang,$username,$pagename,$loginterms,$baseurl,$linkedheaderimgsrc,$allow_password_change,$userfullname,$username,$slimheader,$theme,$responsiveheaderimgsrc,
+            $storageurl;
+
     if(!empty($linkedheaderimgsrc)) 
         {
         $header_img_src = $linkedheaderimgsrc;
@@ -19,13 +21,26 @@ function serveHeader() {
         }
     else 
         {
-        $header_img_src = $baseurl.'/gfx/titles/title.png';
+        $header_img_src = $baseurl.'/gfx/titles/title.svg';
+        }
+
+    // Set via System Config page?
+    if('[storage_url]' == substr($header_img_src, 0, 13))
+        {
+        // Parse and replace the storage URL
+        $header_img_src = str_replace('[storage_url]', $storageurl, $header_img_src);
+        }
+
+    // If there is a baseurl, no need to add it again
+    if(false === strpos($header_img_src, $baseurl))
+        {
+        $header_img_src = $baseurl . $header_img_src;
         }
 
     if (!$slimheader)
         {
         ?>
-        <a href="<?php echo $baseurl; ?>"><img src="<?php echo $baseurl.$header_img_src; ?>" id="HeaderImg" style="display:none;"></img></a>
+        <a href="<?php echo $baseurl; ?>"><img src="<?php echo $header_img_src; ?>" id="HeaderImg" style="display:none;"></img></a>
         
         <?php
         }
@@ -56,17 +71,6 @@ function HookRse_responsiveAllResponsiveheader()
 function HookRse_responsiveAllHeadertop()
     {
     serveHeader();
-    }
-function HookRse_responsiveAllReplaceheaderfullnamelink() 
-    {
-    global $allow_password_change,$userfullname,$username;
-    if ($allow_password_change == false) 
-        {
-        ?>
-        <li class="ResponsiveNav1Username"><?php echo htmlspecialchars(($userfullname=="" ? $username : $userfullname))?></li>
-        <?php  
-        return true;
-        }
     }
 function HookRse_responsiveAllResponsivesimplesearch() 
     {

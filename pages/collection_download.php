@@ -1,12 +1,13 @@
 <?php 
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include_once "../include/collections_functions.php";
 # External access support (authenticate only if no key provided, or if invalid access key provided)
 $k=getvalescaped("k","");if (($k=="") || (!check_access_key_collection(getvalescaped("collection","",true),$k))) {include "../include/authenticate.php";}
 include "../include/search_functions.php";
 include "../include/resource_functions.php";
 include_once '../include/csv_export_functions.php';
+include_once '../include/pdf_functions.php';
 ob_end_clean();
 $uniqid="";$id="";
 $collection=getvalescaped("collection","",true);  if ($k!=""){$usercollection=$collection;}
@@ -77,6 +78,8 @@ function get_extension($resource, $size)
 	return $pextension;
 	}
 
+$count_data_only_types = 0;
+
 #build the available sizes array
 for ($n=0;$n<count($result);$n++)
 	{
@@ -108,10 +111,15 @@ for ($n=0;$n<count($result);$n++)
 				$available_sizes[$size_id][]=$ref;
 			}
 		}
-	}
+
+    if(in_array($result[$n]['resource_type'], $data_only_resource_types))
+        {
+        $count_data_only_types++;
+        }
+    }
 
 #print_r($available_sizes);
-if(count($available_sizes)==0)
+if(0 == count($available_sizes) && 0 === $count_data_only_types)
 	{
 	?>
 	<script type="text/javascript">
@@ -219,6 +227,7 @@ if ($submitted != "")
 	# Build a list of files to download
 	for ($n=0;$n<count($result);$n++)
 		{
+		resource_type_config_override($result[$n]["resource_type"]);
 		$copy=false; 
 		$ref=$result[$n]["ref"];
 		# Load access level
@@ -263,7 +272,19 @@ if ($submitted != "")
 				{
 				$used_resources[]=$ref;
 				# when writing metadata, we take an extra security measure by copying the files to tmp
-				$tmpfile=write_metadata($p,$ref,$id); // copies file
+                $tmpfile = false;
+
+                if($exiftool_write && !$force_exiftool_write_metadata)
+                    {
+                    $exiftool_write_option = false;
+                    if('yes' == getvalescaped('write_metadata_on_download', ''))
+                        {
+                        $exiftool_write_option = true;
+                        }
+                    }
+
+				$tmpfile = write_metadata($p, $ref, $id); // copies file
+
 				if($tmpfile!==false && file_exists($tmpfile)){
 					$p=$tmpfile; // file already in tmp, just rename it
 				} else if (!$replaced_file) {
@@ -393,8 +414,69 @@ if ($submitted != "")
 			}
 
 		}
-    if ($path=="") {exit($lang["nothing_to_download"]);}	
+    // Collection contains data_only resource types
+    if(0 < $count_data_only_types)
+        {
+        for($n = 0; $n < count($result); $n++)
+            {
+            // Data-only type of resources should be generated and added in the archive
+            if(in_array($result[$n]['resource_type'], $data_only_resource_types))
+                {
+                $template_path = get_pdf_template_path($result[$n]['resource_type']);
+                $pdf_filename = 'RS_' . $result[$n]['ref'] . '_data_only.pdf';
+                $pdf_file_path = get_temp_dir(false, $id) . '/' . $pdf_filename;
 
+                // Go through fields and decide which ones we add to the template
+                $placeholders = array(
+                    'resource_type_name' => get_resource_type_name($result[$n]['resource_type'])
+                );
+
+                $metadata = get_resource_field_data($result[$n]['ref'], false, true, -1, '' != getval('k', ''));
+
+                foreach($metadata as $metadata_field)
+                    {
+                    $metadata_field_value = trim(tidylist(i18n_get_translated($metadata_field['value'])));
+
+                    // Skip if empty
+                    if('' == $metadata_field_value)
+                        {
+                        continue;
+                        }
+
+                    $placeholders['metadatafield-' . $metadata_field['ref'] . ':title'] = $metadata_field['title'];
+                    $placeholders['metadatafield-' . $metadata_field['ref'] . ':value'] = $metadata_field_value;
+                    }
+                generate_pdf($template_path, $pdf_file_path, $placeholders, true);
+
+                // Go and add file to archive
+                if($use_zip_extension)
+                    {
+                    $zip->addFile($pdf_file_path, $pdf_filename);
+                    }
+                else
+                    {
+                    $path .= $pdf_file_path . "\r\n";
+                    }
+                $deletion_array[] = $pdf_file_path;
+
+                continue;
+                }
+
+            daily_stat('Resource download', $result[$n]['ref']);
+            resource_log($result[$n]['ref'], 'd', 0, $usagecomment, '', '', $usage);
+
+            if($resource_hit_count_on_downloads)
+                { 
+                /*greatest() is used so the value is taken from the hit_count column in the event that new_hit_count is zero
+                to support installations that did not previously have a new_hit_count column (i.e. upgrade compatability).*/
+                sql_query("UPDATE resource SET new_hit_count = greatest(hit_count, new_hit_count) + 1 WHERE ref = '{$result[$n]['ref']}'");
+                }
+            }
+        }
+    else if('' == $path)
+        {
+        exit($lang['nothing_to_download']);
+        }
 
     # Append summary notes about the completeness of the package, write the text file, add to archive, and schedule for deletion
     if (($zipped_collection_textfile==true)&&($includetext=="true")){
@@ -460,7 +542,7 @@ if ($submitted != "")
 
 		if($use_zip_extension)
 			{
-			$zip->addFile($csv_file, '/Col-' . $collection . '-metadata-export.csv');
+			$zip->addFile($csv_file, 'Col-' . $collection . '-metadata-export.csv');
 			}
 		else
 			{
@@ -667,12 +749,13 @@ hook("collectiondownloadmessage");
 
 if (!hook('replacesizeoptions'))
 	{
-?>
-<div class="Question">
-<label for="downloadsize"><?php echo $lang["downloadsize"]?></label>
-<div class="tickset">
-<?php
-
+    if($count_data_only_types !== count($result))
+        {
+        ?>
+        <div class="Question">
+        <label for="downloadsize"><?php echo $lang["downloadsize"]?></label>
+        <div class="tickset">
+    <?php
 	$maxaccess=collection_max_access($collection);
 	$sizes=get_all_image_sizes(false,$maxaccess>=1);
 
@@ -739,17 +822,22 @@ foreach ($available_sizes as $key=>$value)
 
 <div class="clearerleft"> </div></div>
 <div class="clearerleft"> </div></div><?php
-	}
+	   }
+    }
 if (!hook('replaceuseoriginal'))
 	{
-?><div class="Question">
-<label for="use_original"><?php echo $lang['use_original_if_size']; ?> <br /><?php
+    if($count_data_only_types !== count($result))
+        {
+        ?>
+        <div class="Question">
+        <label for="use_original"><?php echo $lang['use_original_if_size']; ?> <br /><?php
 
-display_size_option('original', $lang['original'], false);
-?></label><input type=checkbox id="use_original" name="use_original" value="yes" >
-<div class="clearerleft"> </div></div>
-<?php
-	}
+        display_size_option('original', $lang['original'], false);
+        ?></label><input type=checkbox id="use_original" name="use_original" value="yes" >
+        <div class="clearerleft"> </div></div>
+        <?php
+	   }
+    }
 
 if ($zipped_collection_textfile=="true") { ?>
 <div class="Question">
@@ -793,7 +881,29 @@ if ($archiver)
 	<label for="include_csv_file"><?php echo $lang['csvAddMetadataCSVToArchive']; ?></label>
 	<input type="checkbox" id="include_csv_file" name="include_csv_file" value="yes">
 </div>
-<div class="clearerleft"></div></div>
+<div class="clearerleft"></div>
+
+<?php
+if($exiftool_write && !$force_exiftool_write_metadata)
+    {
+    // From a data security point of view, by default we should not write the metadata as it may contain confidential information
+    $write_metadata_on_download_ticked = false;
+    if($exiftool_write_option)
+        {
+        $write_metadata_on_download_ticked = true;
+        }
+    ?>
+    <!-- Let user say (if allowed - ie. not enforced by system admin) whether metadata should be written to the file or not -->
+    <div class="Question">
+        <label for="write_metadata_on_download"><?php echo $lang['collection_download__write_metadata_on_download_label']; ?></label>
+        <input type="checkbox" id="write_metadata_on_download" name="write_metadata_on_download" value="yes"<?php echo ($write_metadata_on_download_ticked ? ' checked' : ''); ?>>
+    </div>
+    <div class="clearerleft"></div>
+    <?php
+    }
+    ?>
+
+</div>
 
 <div class="QuestionSubmit" id="downloadbuttondiv"> 
 <label for="download"> </label>

@@ -6,7 +6,7 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php"; 
 
 
@@ -22,7 +22,12 @@ if (getval("unlock","")!="")
 	# reset user lock
 	sql_query("update user set login_tries='0' where ref='$ref'");
 	}
-elseif ((getval("save","")!="") || (getval("suggest","")!=""))
+elseif(getval("suggest","")!="")
+	{
+	echo make_password();
+	exit();
+	}
+elseif (getval("save","")!="")
 	{
 	# Save user data
 	$result=save_user($ref);
@@ -74,13 +79,14 @@ if (getval("loginas","")!="")
 
 ?>
 <div class="BasicsBox">
-<p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["manageusers"]?></a></p>
+<p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["manageusers"]?></a></p>
 <h1><?php echo $lang["edituser"]?> <?php global $display_useredit_ref; echo $display_useredit_ref ? $ref : ""; ?></h1>
 <?php if (isset($error)) { ?><div class="FormError">!! <?php echo $error?> !!</div><?php } ?>
 
 <form method=post action="<?php echo $baseurl_short?>pages/team/team_user_edit.php">
 <input type=hidden name=ref value="<?php echo urlencode($ref) ?>">
 <input type=hidden name=backurl value="<?php echo getval("backurl", $baseurl_short . "pages/team/team_user.php?nc=" . time())?>">
+<input name="save" type="submit" style="display:none;" value="save" /><!-- to capture default action -->
 
 <?php
 if (($user["login_tries"]>=$max_login_attempts_per_username) && (strtotime($user["login_last_try"]) > (time() - ($max_login_attempts_wait_minutes * 60))))
@@ -92,14 +98,14 @@ if (($user["login_tries"]>=$max_login_attempts_per_username) && (strtotime($user
 	<div class="clearerleft"> </div>
 <?php } ?>
 
-<div class="Question"><label><?php echo $lang["username"]?></label><input name="username" type="text" class="stdwidth" value="<?php echo $user["username"]?>"><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["username"]?></label><input name="username" type="text" class="stdwidth" value="<?php echo form_value_display($user,"username") ?>"><div class="clearerleft"> </div></div>
 
 <?php if (!hook("password")) { ?>
-<div class="Question"><label><?php echo $lang["password"]?></label><input name="password" type="text" class="medwidth" value="<?php echo (strlen($user["password"])==64 || strlen($user["password"])==32)?$lang["hidden"]:$user["password"]?>">&nbsp;<input class="medcomplementwidth" type=submit name="suggest" value="<?php echo $lang["suggest"]?>" /><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["password"]?></label><input name="password" id="password" type="text" class="medwidth" value="<?php echo (strlen($user["password"])==64 || strlen($user["password"])==32)?$lang["hidden"]:$user["password"]?>">&nbsp;<input class="medcomplementwidth" type=submit name="suggest" value="<?php echo $lang["suggest"]?>" onclick="jQuery.get(this.form.action + '?suggest=true', function(result) {jQuery('#password').val(result);});return false;" /><div class="clearerleft"> </div></div>
 <?php } ?>
 
 <?php if (!hook("replacefullname")){?>
-<div class="Question"><label><?php echo $lang["fullname"]?></label><input name="fullname" type="text" class="stdwidth" value="<?php echo htmlspecialchars($user["fullname"])?>"><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["fullname"]?></label><input name="fullname" type="text" class="stdwidth" value="<?php echo form_value_display($user,"fullname") ?>"><div class="clearerleft"> </div></div>
 <?php } ?>
 
 <div class="Question"><label><?php echo $lang["group"]?></label>
@@ -116,7 +122,7 @@ if (($user["login_tries"]>=$max_login_attempts_per_username) && (strtotime($user
 		else
 			{
 			?>
-			<option value="<?php echo $groups[$n]["ref"]?>" <?php if ($user["usergroup"]==$groups[$n]["ref"]) {?>selected<?php } ?>><?php echo $groups[$n]["name"]?></option>	
+			<option value="<?php echo $groups[$n]["ref"]?>" <?php if (getval("usergroup",$user["usergroup"])==$groups[$n]["ref"]) {?>selected<?php } ?>><?php echo $groups[$n]["name"]?></option>	
 			<?php
 			}
 		}
@@ -126,15 +132,17 @@ if (($user["login_tries"]>=$max_login_attempts_per_username) && (strtotime($user
 <div class="clearerleft"> </div></div>
 <?php hook("additionalusergroupfields"); ?>
 
-<div class="Question"><label><?php echo $lang["emailaddress"]?></label><input name="email" type="text" class="stdwidth" value="<?php echo $user["email"]?>"><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["emailaddress"]?></label><input name="email" type="text" class="stdwidth" value="<?php echo form_value_display($user,"email") ?>"><div class="clearerleft"> </div></div>
 
-<div class="Question"><label><?php echo $lang["accountexpiresoptional"]?><br/><?php echo $lang["format"] . ": " . $lang["yyyy-mm-dd"]?></label><input name="account_expires" type="text" class="stdwidth" value="<?php echo $user["account_expires"]?>"><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["accountexpiresoptional"]?><br/><?php echo $lang["format"] . ": " . $lang["yyyy-mm-dd"]?></label><input name="account_expires" type="text" class="stdwidth" value="<?php echo form_value_display($user,"account_expires")?>"><div class="clearerleft"> </div></div>
 
-<div class="Question"><label><?php echo $lang["ipaddressrestriction"]?><br/><?php echo $lang["wildcardpermittedeg"]?> 194.128.*</label><input name="ip_restrict" type="text" class="stdwidth" value="<?php echo $user["ip_restrict"]?>"><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["ipaddressrestriction"]?><br/><?php echo $lang["wildcardpermittedeg"]?> 194.128.*</label><input name="ip_restrict" type="text" class="stdwidth" value="<?php echo form_value_display($user,"ip_restrict") ?>"><div class="clearerleft"> </div></div>
+
+<div class="Question"><label><?php echo $lang["searchfilteroverride"]?></label><input name="search_filter_override" type="text" class="stdwidth" value="<?php echo form_value_display($user,"search_filter_override")?>"><div class="clearerleft"> </div></div>
 
 <?php hook("additionaluserfields");?>
 <?php if (!hook("replacecomments")) { ?>
-<div class="Question"><label><?php echo $lang["comments"]?></label><textarea name="comments" class="stdwidth" rows=5 cols=50><?php echo htmlspecialchars($user["comments"])?></textarea><div class="clearerleft"> </div></div>
+<div class="Question"><label><?php echo $lang["comments"]?></label><textarea name="comments" class="stdwidth" rows=5 cols=50><?php echo form_value_display($user,"comments")?></textarea><div class="clearerleft"> </div></div>
 <?php } ?>
 <div class="Question"><label><?php echo $lang["created"]?></label>
 <div class="Fixed"><?php echo nicedate($user["created"],true) ?></div>
@@ -152,7 +160,7 @@ if (($user["login_tries"]>=$max_login_attempts_per_username) && (strtotime($user
 
 <div class="Question">
 <label><?php echo $lang["team_user_contributions"]?></label>
-<div class="Fixed"><a href="<?php echo $baseurl_short?>pages/search.php?search=!contributions<?php echo $ref?>">&gt;&nbsp;<?php echo $lang["team_user_view_contributions"] ?></a></div>
+<div class="Fixed"><a href="<?php echo $baseurl_short?>pages/search.php?search=!contributions<?php echo $ref?>"><?php echo LINK_CARET ?><?php echo $lang["team_user_view_contributions"] ?></a></div>
 <div class="clearerleft"> </div></div>
 
 
@@ -194,11 +202,11 @@ if (!hook("ticktoemailpassword"))
 <?php if ($user["approved"]==1 && !hook("loginasuser")) { ?>
 
 <div class="Question"><label><?php echo $lang["log"]?></label>
-<div class="Fixed"><a href="<?php echo $baseurl_short ?>pages/admin/admin_system_log.php?actasuser=<?php echo $ref ?>&backurl=<?php echo urlencode($url) ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["clicktoviewlog"]?></a></div>
+<div class="Fixed"><a href="<?php echo $baseurl_short ?>pages/admin/admin_system_log.php?actasuser=<?php echo $ref ?>&backurl=<?php echo urlencode($url) ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["clicktoviewlog"]?></a></div>
 <div class="clearerleft"> </div></div>
 
 <div class="Question"><label><?php echo $lang["login"]?></label>
-<div class="Fixed"><a href="<?php echo $baseurl_short?>pages/team/team_user_edit.php?ref=<?php echo $ref?>&loginas=true">&gt;&nbsp;<?php echo $lang["clicktologinasthisuser"]?></a></div>
+<div class="Fixed"><a href="<?php echo $baseurl_short?>pages/team/team_user_edit.php?ref=<?php echo $ref?>&loginas=true"><?php echo LINK_CARET ?><?php echo $lang["clicktologinasthisuser"]?></a></div>
 <div class="clearerleft"> </div></div>
 <?php } ?>
 

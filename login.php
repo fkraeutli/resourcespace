@@ -1,6 +1,6 @@
 <?php
 include "include/db.php";
-include "include/general.php";
+include_once 'include/general.php';
 include "include/resource_functions.php";
 include "include/collections_functions.php";
 include "include/login_functions.php";
@@ -22,7 +22,7 @@ if ($modal)
 	<?php
 	}
 
-if (isset($anonymous_login) && $anon_login_modal && !$modal && getval("logout","")==false)
+if (isset($anonymous_login) && $anon_login_modal && !$modal && getval("logout","")==false && !array_key_exists("username",$_POST))
 	{
 	$anon_login_extras="loginmodal=true&url=".urlencode($url)."&api=".urlencode($api)."&error=".urlencode(getval("error",""))."&auto=".urlencode(getval("auto",""))."&nocookies=".urlencode(getval("nocookies",""));
 	
@@ -73,7 +73,6 @@ elseif (array_key_exists("username",$_POST) && getval("langupdate","")=="")
     {
    
     $password=trim(getvalescaped("password",""));
-
 	$result=perform_login();
 	if ($result['valid'])
 		{
@@ -91,9 +90,9 @@ elseif (array_key_exists("username",$_POST) && getval("langupdate","")=="")
         rs_setcookie("user", $result['session_hash'], $expires, "", "", substr($baseurl,0,5)=="https", true);
 
         # Set default resource types
-        setcookie("restypes",$default_res_types, 0, '', '', false, true);
+        rs_setcookie('restypes', $default_res_types);
 
-        $userpreferences = ($user_preferences) ? sql_query("SELECT user, `value` AS colour_theme FROM user_preferences WHERE user = " . $result['ref'] . " AND parameter = 'colour_theme';") : FALSE;
+        $userpreferences = ($user_preferences) ? sql_query("SELECT user, `value` AS colour_theme FROM user_preferences WHERE user = '" . $result['ref'] . "' AND parameter = 'colour_theme';") : FALSE;
         $userpreferences = ($userpreferences && isset($userpreferences[0])) ? $userpreferences[0]: FALSE;
         if($userpreferences && isset($userpreferences["colour_theme"]) && $userpreferences["colour_theme"]!="" && (!isset($_COOKIE["colour_theme"]) || $userpreferences["colour_theme"]!=$_COOKIE["colour_theme"]))
             {
@@ -104,8 +103,27 @@ elseif (array_key_exists("username",$_POST) && getval("langupdate","")=="")
 		# the collection frame to appear full screen.
 		if (strpos($url,"pages/collections.php")!==false) {$url="index.php";}
 
-        $accepted=sql_value("select accepted_terms value from user where username='$username' and (password='$password' or password='".$result['password_hash']."')",0);
-		if (($accepted==0) && ($terms_login) && !checkperm("p")) {redirect ("pages/terms.php?noredir=true&url=" . urlencode("pages/user/user_change_password.php"));} else {redirect($url);}
+        $accepted = sql_value("SELECT accepted_terms value FROM user WHERE ref = '{$result['ref']}'", 0);
+        if(0 == $accepted && $terms_login && !checkperm('p'))
+            {
+            $redirect_url='pages/terms.php?noredir=true';
+            }
+        else{
+            $redirect_url=$url;
+            }
+            
+		if(!$modal)
+			{
+			redirect($redirect_url);
+			}
+		else
+			{
+			?>
+			<script type="text/javascript">
+				CentralSpaceLoad('<?php echo $baseurl."/".$redirect_url?>',true);
+			</script>
+			<?php
+			}
         }
     else
         {
@@ -127,9 +145,16 @@ if ((getval("logout","")!="") && array_key_exists("user",$_COOKIE))
     rs_setcookie("user", "", time() - 3600);
 
     # Also blank search related cookies
-    setcookie("search","",0,'','',false,true);	
-    setcookie("saved_offset","",0,'','',false,true);
-    setcookie("saved_archive","",0,'','',false,true);
+    rs_setcookie('search', '');
+    rs_setcookie('saved_offset', '');
+    rs_setcookie('saved_archive', '');
+    rs_setcookie('restypes', '');
+    
+    // Blank cookies under /pages as well
+    rs_setcookie('search', '', 0, $baseurl_short . 'pages');
+    rs_setcookie('saved_offset', '', 0, $baseurl_short . 'pages');
+    rs_setcookie('saved_archive', '', 0, $baseurl_short . 'pages');
+    rs_setcookie('restypes', '', 0, $baseurl_short . 'pages');
     
     unset($username);
 	
@@ -157,6 +182,39 @@ if (getval("langupdate","")!="")
 
 
 include "include/header.php";
+
+if($login_background && !hook('replace_login_background'))
+	{
+    $backimageurl = "";
+
+    // Create homeanim folder if we don't have one
+    if(!file_exists(dirname(__FILE__) . "/{$homeanim_folder}"))
+        {
+        mkdir(dirname(__FILE__) . "/{$homeanim_folder}", 0777, true);
+        }
+
+    $dir = dirname(__FILE__) . "/" . $homeanim_folder;
+    $d = scandir($dir);    
+	sort($d, SORT_NUMERIC);
+    foreach ($d as $f) 
+		{ 
+		if(preg_match("/[0-9]+\.(jpg)$/",$f))
+            {
+            $backimageurl= $baseurl_short . $homeanim_folder . "/" . $f;  
+            break;    
+            }
+        }
+	?>
+	<style>
+	#UICenter {
+		background-image: url('<?php echo $backimageurl; ?>');
+		}
+	</style>
+	<div id="login_box">
+	<?php
+	}
+
+	
 if (!hook("replaceloginform")) {
 ?>
 
@@ -217,7 +275,7 @@ if (!hook("replaceloginform")) {
 # Javascript to default the focus to the username box
 ?>
 <script type="text/javascript">
-document.getElementById('username').focus();
+jQuery('#username').focus();
 
 jQuery(document).ready(function() {
     /* 
@@ -255,6 +313,12 @@ hook("afterlogin");
 hook("responsivescripts");
 //include_once "./include/footer.php"; AJAX Check Ignores Footer
 //Closing tags as the footer has not been included
+if($login_background)
+	{
+	?>
+	<div> <!-- end of login_box -->
+	<?php
+	}
 ?>
 </div>
 </div>

@@ -1,6 +1,6 @@
 <?php
 include "../../../include/db.php";
-include "../../../include/general.php";
+include_once "../../../include/general.php";
 include "../../../include/resource_functions.php";
 include_once "../../../include/collections_functions.php";
 include "../../../include/search_functions.php";
@@ -8,14 +8,20 @@ include "../../../include/search_functions.php";
 include_once "../languages/en.php"; # Because this may not be included automatically, i.e. if the plugin is not available to all groups.
 
 # Get variables and check key is valid.
-$ref=getvalescaped("ref","");
-$key=getvalescaped("key","");
-$size=getvalescaped("size","pre");
-$transition=(int)getvalescaped("transition",4);
-$showtext=getvalescaped("showtext","0");
+$ref        = getvalescaped('ref', '');
+$key        = getvalescaped('k', '');
+$size       = getvalescaped('size', 'pre');
+$transition = (int)getvalescaped('transition', 4);
+$showtext   = getvalescaped('showtext', '0');
 
-$width=getvalescaped("width","");
-$player_width=$width;
+$width        = getvalescaped('width', '');
+$player_width = $width;
+
+$dynamic = ('true' == getvalescaped('dynamic', '') ? true : false);
+if($dynamic)
+    {
+    $player_height = getvalescaped('height', '');
+    }
 
 # Check key is valid
 if (!check_access_key_collection($ref,$key))
@@ -35,7 +41,7 @@ $use_watermark=check_use_watermark();
 <body>
 
 <div class="embedslideshow_player">
-<div class="embedslideshow_preview" id="embedslideshow_preview" style="position: relative;width:<?php echo $width?>px;height:<?php echo $width+8 ?>px;">
+<div class="embedslideshow_preview" id="embedslideshow_preview" style="position: relative;width:<?php echo $width?>px;height:<?php echo ($dynamic == true ? $player_height - 48 : $width + 8); ?>px;">
 
 <script type="text/javascript">
 var embedslideshow_page=1;
@@ -86,7 +92,9 @@ foreach ($resources as $resource)
 		}
 
 	?>
-	<a class="embedslideshow_preview_inner" id="embedslideshow_preview<?php echo $page ?>" style="display:none;" href="#" onClick="embedslideshow_auto=false;embedslideshow_ShowPage(<?php echo ($page + 1) ?>,false,false);return false;"><img border="0" width=<?php echo $width ?> height=<?php echo $height ?> src="<?php echo $preview_path ?>"></a>
+	<a class="embedslideshow_preview_inner" id="embedslideshow_preview<?php echo $page ?>" style="display:none;" href="#" onClick="embedslideshow_auto=false;embedslideshow_ShowPage(<?php echo ($page + 1) ?>,false,false);return false;">
+        <img border="0" width=<?php echo $width ?> height=<?php echo ($dynamic ? $player_height - 48 : $height); ?> src="<?php echo $preview_path ?>">
+    </a>
 	<?php 
 	global $embedslideshow_textfield,$embedslideshow_resourcedatatextfield;
 	if($embedslideshow_textfield && $showtext) 
@@ -106,12 +114,24 @@ foreach ($resources as $resource)
 		<?php
 		} 
 	else 
-		{?>
-		<script type="text/javascript">
-		embedslideshow_x_offsets[<?php echo $page ?>]=<?php echo ceil(($player_width-$width)/2)+4; ?>;
-		embedslideshow_y_offsets[<?php echo $page ?>]=<?php echo ceil(($player_width-$height)/2)+4;?>;
-		</script>
-		<?php
+		{
+        if($dynamic)
+            {
+            ?>
+            <script type="text/javascript">
+            embedslideshow_y_offsets[<?php echo $page ?>] = 4;
+            </script>
+            <?php
+            }
+        else
+            {
+            ?>
+            <script type="text/javascript">
+            embedslideshow_x_offsets[<?php echo $page ?>]=<?php echo ceil(($player_width-$width)/2)+4; ?>;
+            embedslideshow_y_offsets[<?php echo $page ?>]=<?php echo ceil(($player_width-$height)/2)+4;?>;
+            </script>
+            <?php
+            }
 		}
 	$page++;
 	}
@@ -133,7 +153,7 @@ $maxpages=$page-1;
 <li class="embedslideshow_auto" id="embedslideshow_auto" Style="cursor: pointer;" onClick="embedslideshow_auto=!embedslideshow_auto;if (embedslideshow_auto) {embedslideshow_ShowPage(embedslideshow_page+1,false,false);$('#embedslideshow_auto').fadeTo(100,1);} else {clearTimeout(timer);$('#embedslideshow_auto').fadeTo(100,0.4);}return false;"<span>||</span></li>
 <?php if ($transition==0) { ?>
 <script type="text/javascript">
-('#embedslideshow_auto').fadeTo(100,0.4);
+$('#embedslideshow_auto').fadeTo(100,0.4);
 </script>
 <?php } ?>
 
@@ -189,7 +209,20 @@ function embedslideshow_ShowPage(page_set,from_auto,jump)
 	// Fade in new page
 	$('#embedslideshow_preview' + embedslideshow_page).fadeIn(embedslideshow_fadetime);
 	$('#embedslideshow_previewtext' + embedslideshow_page).fadeIn(embedslideshow_fadetime);
-	
+
+    <?php
+    if($dynamic)
+        {
+        ?>
+        var pageImageSrc = $('#embedslideshow_preview' + embedslideshow_page + ' > img').attr('src');
+        console.log(pageImageSrc);
+        $('#embedslideshow_preview').css('background', '#000 url("' + pageImageSrc + '") no-repeat left top');
+        $('#embedslideshow_preview').css('background-size', 'cover');
+
+        $('#embedslideshow_preview' + embedslideshow_page).hide();
+        <?php
+        }
+        ?>
 	
 	if (embedslideshow_auto) {timer = setTimeout("embedslideshow_ShowPage(embedslideshow_page+1,true,false);",<?php echo ($transition==0?4000:$transition * 1000) ?>);} else {clearTimeout(timer);}
 	

@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 
 if (!checkperm("a"))
@@ -58,7 +58,7 @@ function addColumnHeader($orderName, $labelKey)
 <?php
 		foreach ($sizes as $size)
 			{
-			if ($size['internal']=='1')
+			if ($size['internal']=='1' && !$internal_preview_sizes_editable)
 				{
 				$edit_url="";
 				}
@@ -92,7 +92,7 @@ function addColumnHeader($orderName, $labelKey)
 	if ($edit_url != "")
 	{
 ?>					<div class="ListTools">
-						&gt;&nbsp;<a href="<?php echo $edit_url; ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["action-edit"]?></a>
+						<?php echo LINK_CARET ?><a href="<?php echo $edit_url; ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["action-edit"]?></a>
 					</div>
 <?php
 	}

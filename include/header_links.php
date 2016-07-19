@@ -34,38 +34,38 @@
 		<?php } ?>
 		<?php if ($speedtagging && checkperm("s") && checkperm("n")) { ?><li><a href="<?php echo $baseurl?>/pages/tag.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["tagging"]?></a></li><?php } ?>
 		
-		<?php 
-		/* ------------ Customisable top navigation ------------------- */
-		if (isset($custom_top_nav))
-			{
-			for ($n=0;$n<count($custom_top_nav);$n++)
-				{
-				
-				if (preg_match("/^https?\:\/\/.+/",$custom_top_nav[$n]['link'])){
-					$isextlink = true;
-				} else {
-					$isextlink = false;
-				}
-				if(strpos($custom_top_nav[$n]["title"],"(lang)")!==false){
-					$custom_top_nav_title=str_replace("(lang)","",$custom_top_nav[$n]["title"]);
-					$custom_top_nav[$n]["title"]=$lang[$custom_top_nav_title];
-				}
-				?>
-				<li><a href="<?php echo $custom_top_nav[$n]["link"] ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo i18n_get_translated($custom_top_nav[$n]["title"]) ?></a></li>
-				<?php
-				}
-			}
-		?>
+        <?php 
+        /* ------------ Customisable top navigation ------------------- */
+        if(isset($custom_top_nav))
+            {
+            for($n = 0; $n < count($custom_top_nav); $n++)
+                {
+                $on_click = ' onClick="return CentralSpaceLoad(this, true);"';
+                $target   = '';
+
+                // External links should open in a new tab
+                if(false === strpos($custom_top_nav[$n]['link'], $baseurl))
+                    {
+                    $on_click = '';
+                    $target   = ' target="_blank"';
+                    }
+
+                if(strpos($custom_top_nav[$n]['title'], '(lang)') !== false)
+                    {
+                    $custom_top_nav_title=str_replace("(lang)","",$custom_top_nav[$n]["title"]);
+                    $custom_top_nav[$n]["title"]=$lang[$custom_top_nav_title];
+                    }
+                    ?>
+                <li><a href="<?php echo $custom_top_nav[$n]["link"] ?>"<?php echo $target . $on_click; ?>><?php echo i18n_get_translated($custom_top_nav[$n]["title"]) ?></a></li>
+                <?php
+                }
+            }
+            ?>
 		
 		
-		<?php if ($help_link){?><li><a href="<?php echo $baseurl?>/pages/help.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["helpandadvice"]?></a></li><?php } ?>
+		<?php if ($help_link) { ?><li><a href="<?php echo $baseurl?>/pages/help.php" onClick="return <?php if (!$help_modal) { ?>CentralSpaceLoad(this,true);<?php } else { ?>ModalLoad(this,true);<?php } ?>"><?php echo $lang["helpandadvice"]?></a></li><?php } ?>
 		<?php global $nav2contact_link; if ($nav2contact_link) { ?><li><a href="<?php echo $baseurl?>/pages/contact.php"  onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["contactus"]?></a></li><?php } ?>
 		<?php if (($top_nav_upload && checkperm("c")) || ($top_nav_upload_user && checkperm("d"))) { ?><li><a href="<?php echo $baseurl?>/pages/edit.php?ref=-<?php echo @$userref?>&amp;uploader=<?php echo $top_nav_upload_type ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["upload"]?></a></li><?php } ?>
-		<?php if (checkperm("t")) { ?><li><a href="<?php echo $baseurl?>/pages/team/team_home.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["teamcentre"]?></a>
-		<?php if ($team_centre_alert_icon && (checkperm("R")||checkperm("r")) &&  (sql_value("select sum(thecount) value from (select count(*) thecount from request where status = 0 union select count(*) thecount from research_request where status = 0) as theunion",0) > 0)){
-			echo '<img src="' . $baseurl . '/gfx/images/attention_16.png" width="16" height="16" alt="Alert" class="TeamCentreAlertIcon" />';
-		} ?>
-		</li><?php } ?>
 
 <?php hook("toptoolbaradder"); ?>
 		</ul>

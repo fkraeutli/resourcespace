@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; #if (!checkperm("s")) {exit ("Permission denied.");}
 include_once "../include/collections_functions.php";
 include "../include/resource_functions.php";
@@ -72,7 +72,7 @@ if (getval("tweak","")!="")
 	
 include "../include/header.php";
 ?>
-<p style="margin:7px 0 7px 0;padding:0;"><a onClick="return CentralSpaceLoad(this,true);" href="<?php if ($backto!=''){echo $backto;} else { echo $baseurl_short.'pages/search';}?>.php?search=!collection<?php echo urlencode($ref)?>&order_by=<?php echo urlencode($order_by) ?>&col_order_by=<?php echo urlencode($col_order_by) ?>&sort=<?php echo urlencode($sort) ?>&k=<?php echo urlencode($k) ?>">&lt;&nbsp;<?php echo $lang["backtoresults"]?></a></p><br />
+<p style="margin:7px 0 7px 0;padding:0;"><a onClick="return CentralSpaceLoad(this,true);" href="<?php if ($backto!=''){echo $backto;} else { echo $baseurl_short.'pages/search';}?>.php?search=!collection<?php echo urlencode($ref)?>&order_by=<?php echo urlencode($order_by) ?>&col_order_by=<?php echo urlencode($col_order_by) ?>&sort=<?php echo urlencode($sort) ?>&k=<?php echo urlencode($k) ?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresults"]?></a></p><br />
 <div class="BasicsBox">
 <h1><?php echo $lang["editresourcepreviews"]?></h1>
 <p><?php echo text("introtext")?></p>

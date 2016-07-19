@@ -6,7 +6,7 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 include "../../include/resource_functions.php";
 include "../../include/search_functions.php";
@@ -18,7 +18,7 @@ $userdata=get_user($ref);
 $backurl=getval("backurl","");
 
 # pager
-$per_page=getvalescaped("per_page_list_log",15);setcookie("per_page_list_log",$per_page, 0, '', '', false, true);
+$per_page=getvalescaped("per_page_list_log",15);rs_setcookie('per_page_list_log', $per_page);
 
 include "../../include/header.php";
 $log=get_user_log($ref, $offset+$per_page);
@@ -31,7 +31,7 @@ $jumpcount=1;
 
 ?>
 <div class="BasicsBox">
-<?php if ($backurl!="none"){?><p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["manageusers"]?></a></p><?php } ?>
+<?php if ($backurl!="none"){?><p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["manageusers"]?></a></p><?php } ?>
 <?php if (!hook("replaceuserlogheader")){?><h1><?php echo $lang["userlog"] . ": " . $userdata["fullname"]?></h1><?php } ?>
 <div class="TopInpageNav">
 <div class="InpageNavLeftBlock"><?php echo $lang["resultsdisplay"]?>:

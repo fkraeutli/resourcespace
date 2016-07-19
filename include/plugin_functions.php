@@ -19,16 +19,18 @@
  */
 function activate_plugin($name)
     {
-    $plugins_dir = dirname(__FILE__).'/../plugins/';
-    $plugin_dir = $plugins_dir.$name;
+    $plugin_dir = get_plugin_path($name);
     if (file_exists($plugin_dir))
         {
         $plugin_yaml = get_plugin_yaml("$plugin_dir/$name.yaml", false);
         # If no yaml, or yaml file but no description present, attempt to read an 'about.txt' file
-        if ($plugin_yaml['desc']=='')
+        if ('' == $plugin_yaml['desc'])
             {
-            $about=$plugins_dir . $name.'/about.txt';
-            if (file_exists($about)) {$plugin_yaml['desc']=substr(file_get_contents($about),0,95) . '...';}
+            $about = $plugin_dir . $name . '/about.txt';
+            if(file_exists($about))
+                {
+                $plugin_yaml['desc'] = substr(file_get_contents($about), 0, 95) . '...';
+                }
             }
     # escape the plugin information
     $plugin_yaml_esc = array();
@@ -607,7 +609,7 @@ function config_gen_setup_html($page_def,$plugin_name,$upload_status,$plugin_pag
                 config_multi_user_select($def[1], $def[2], $GLOBALS[$def[1]], $def[3]);
                 break;			
             case 'single_ftype_select':
-                config_single_ftype_select($def[1], $def[2], $GLOBALS[$def[1]], $def[3], $def[4]);
+                config_single_ftype_select($def[1], $def[2], $GLOBALS[$def[1]], $def[3], $def[4], $def[5]);
                 break;
             case 'multi_ftype_select':
                 config_multi_ftype_select($def[1], $def[2], $GLOBALS[$def[1]], $def[3],$def[4], $def[5]); 
@@ -931,14 +933,20 @@ function config_add_multi_group_select($config_var, $label, $width=300)
  * @param integer $current the current value of the config variable being set
  * @param integer $width the width of the input field in pixels. Default: 300.
  */
-function config_single_ftype_select($name, $label, $current, $width=300, $ftype=false)
+function config_single_ftype_select($name, $label, $current, $width=300, $rtype=false, $ftypes=array())
     {
     global $lang;
-    if($ftype===false){
-    	$fields=sql_query('select * from resource_type_field order by title, name');
+	$fieldtypefilter="";
+	if(count($ftypes)>0)
+		{
+		$fieldtypefilter = " type in ('" . implode("','", $ftypes) . "')";
+		}
+		
+    if($rtype===false){
+    	$fields=sql_query('select * from resource_type_field ' .  (($fieldtypefilter=="")?'':' where ' . $fieldtypefilter) . ' order by title, name');
     }
     else{
-    	$fields=sql_query('select * from resource_type_field where resource_type="$ftype" order by title, name');
+    	$fields=sql_query("select * from resource_type_field where resource_type='$rtype' " .  (($fieldtypefilter=="")?"":" and " . $fieldtypefilter) . "order by title, name");
     }
 ?>
   <div class="Question">
@@ -964,10 +972,12 @@ function config_single_ftype_select($name, $label, $current, $width=300, $ftype=
  * @param string $config_var the name of the configuration variable to be added.
  * @param string $label the user text displayed to label the select block. Usually a $lang string.
  * @param integer $width the width of the input field in pixels. Default: 300.
+ * @param integer $rtype optional to specify a resource type to get fields for 
+ * @param integer array $ftypes an array of field types e.g. (4,6,10) will return only fields of a date type
  */
-function config_add_single_ftype_select($config_var, $label, $width=300, $ftype=false)
+function config_add_single_ftype_select($config_var, $label, $width=300, $rtype=false, $ftypes=array())
     {
-    return array('single_ftype_select', $config_var, $label, $width, $ftype);
+    return array('single_ftype_select', $config_var, $label, $width, $rtype, $ftypes);
     }
 
 /**
@@ -1320,29 +1330,28 @@ function get_plugin_css($theme){
 	$plugincss="";
 	for ($n=count($plugins)-1;$n>=0;$n--)
 	{
-	$csspath=dirname(__FILE__)."/../plugins/" . $plugins[$n] . "/css/style.css";
+	$csspath=get_plugin_path($plugins[$n]) . "/css/style.css";
 	if (file_exists($csspath))
 		{
-		$plugincss.='<link href="'.$baseurl.'/plugins/'.$plugins[$n].'/css/style.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
+		$plugincss.='<link href="'.get_plugin_path($plugins[$n],true).'/css/style.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
 		';
 		}	
 
 	# Allow language specific CSS files
-	$csspath=dirname(__FILE__)."/../plugins/" . $plugins[$n] . "/css/style-" . $language . ".css";
+	$csspath=get_plugin_path($plugins[$n]) . "/css/style-" . $language . ".css";
 	if (file_exists($csspath))
 		{
-		$plugincss.='<link href="'.$baseurl.'/plugins/'.$plugins[$n].'/css/style-' . $language . '.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
+		$plugincss.='<link href="' . get_plugin_path($plugins[$n],true) . '/css/style-' . $language . '.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
 		';
 		}	
-
 
 	# Allow colour theme specific styles
-	$csspath=dirname(__FILE__)."/../plugins/" . $plugins[$n] . "/css/Col-".$theme.".css";	
+	$csspath=get_plugin_path($plugins[$n]) . "/css/Col-".$theme.".css";	
 	if (file_exists($csspath))
 		{
-		$plugincss.='<link href="'.$baseurl.'/plugins/'.$plugins[$n].'/css/Col-'.$theme.'.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
+		$plugincss.='<link href="' . get_plugin_path($plugins[$n],true) . '/css/Col-'.$theme.'.css?css_reload_key='.$css_reload_key.'" rel="stylesheet" type="text/css" media="screen,projection,print" class="plugincss" />
 		';
-		}	
+		}
 	}
 	return $plugincss;
 }

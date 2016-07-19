@@ -31,13 +31,17 @@ TreeClickable["<?php echo $name?>"]=new Array();
 TreeChecked["<?php echo $name?>"]=new Array();
 TreeTickedDesc["<?php echo $name?>"]=new Array();
 TreeDynamic["<?php echo $name?>"]=false;
+branch_limit_field['field_<?php echo $field['ref']; ?>'] = branch_limit;
 
 nocategoriesmessage="<?php echo $lang["nocategoriesselected"] ?>";
 
 <?php
 
 # Load the tree
-$checked=explode(",",strtolower($value));
+//$checked=explode(",",strtolower($value));
+$checked=preg_split('/[,\|]/',strtolower($value));
+
+
 for($c=0;$c<count($checked);$c++)
 	{
 	$checked[$c] = trim($checked[$c]);

@@ -1,6 +1,6 @@
 <?php
 include "../../../include/db.php";
-include "../../../include/general.php";
+include_once "../../../include/general.php";
 include "../../../include/authenticate.php"; if (!checkperm("a")) {exit("Access denied.");}
 include "../../../include/header.php";
 
@@ -81,7 +81,7 @@ include "../../../include/header.php";
 			flush();
 
 			// grab a log to see if updates are available
-			$svnlog=svn_log("http://svn.resourcespace.org/svn/resourcespace", SVN_REVISION_HEAD, $svnrevision+0);
+			$svnlog=svn_log("http://svn.resourcespace.org/svn/rs/trunk", SVN_REVISION_HEAD, $svnrevision+0);
 
 			if (count($svnlog)>1)
 				{

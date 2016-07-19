@@ -1,26 +1,9 @@
 <?php
 include '../../include/db.php';
-include '../../include/general.php';
+include_once '../../include/general.php';
 include '../../include/authenticate.php'; if(!checkperm('a')) { exit('Permission denied.'); }
 include_once '../../include/config_functions.php';
 
-// Process autosaving requests
-if(getval('ajax', '') === 'true' && getval('autosave', '') === 'true')
-    {
-    $response['success'] = true;
-    $response['message'] = '';
-
-    $autosave_option_name  = getvalescaped('autosave_option_name', '');
-    $autosave_option_value = getvalescaped('autosave_option_value', '');
-
-    if(!set_config_option(null, $autosave_option_name, $autosave_option_value))
-        {
-        $response['success'] = false;
-        }
-
-    echo json_encode($response);
-    exit();
-    }
 
 $enable_disable_options = array($lang['userpreference_disable_option'], $lang['userpreference_enable_option']);
 $yes_no_options         = array($lang['no'], $lang['yes']);
@@ -35,16 +18,18 @@ $page_def[] = config_add_file_input(
     $baseurl . '/pages/admin/admin_system_config.php',
     300
 );
+
+$page_def[] = config_add_colouroverride_input(
+    'header_colour_style_override',
+    $lang["setup-headercolourstyleoverride"],
+    '',
+    null,
+    true,
+    "jQuery('#Header').css('background',value);"
+);
+
 $page_def[] = config_add_text_input('email_from', $lang['setup-emailfrom'], false, 300, false, '', true);
 $page_def[] = config_add_text_input('email_notify', $lang['setup-emailnotify'], false, 300, false, '', true);
-$page_def[] = config_add_boolean_select(
-    'metadata_read_default',
-    $lang['embedded_metadata'],
-    array($lang['embedded_metadata_donot_extract_option'], $lang['embedded_metadata_extract_option']),
-    300,
-    '',
-    true
-);
 $page_def[] = config_add_html('</div>');
 
 
@@ -92,6 +77,8 @@ $page_def[] = config_add_single_select(
 $page_def[] = config_add_boolean_select('archive_search', $lang['stat-archivesearch'], $enable_disable_options, 300, '', true);
 $page_def[] = config_add_boolean_select('use_checkboxes_for_selection', $lang['userpreference_use_checkboxes_for_selection_label'], $enable_disable_options, 300, '', true);
 $page_def[] = config_add_boolean_select('display_resource_id_in_thumbnail', $lang['systemconfig_display_resource_id_in_thumbnail_label'], $enable_disable_options, 300, '', true);
+$page_def[] = config_add_boolean_select('advanced_search_contributed_by', $lang['systemconfig_advanced_search_contributed_by_label'], $enable_disable_options, 300, '', true);
+$page_def[] = config_add_boolean_select('advanced_search_media_section', $lang['systemconfig_advanced_search_media_section_label'], $enable_disable_options, 300, '', true);
 $page_def[] = config_add_html('</div>');
 
 
@@ -114,6 +101,7 @@ $page_def[] = config_add_html('<h3 class="CollapsibleSectionHead collapsed">' . 
 $page_def[] = config_add_single_select('thumbs_default', $lang['userpreference_thumbs_default_label'], array('show' => $lang['showthumbnails'], 'hide' => $lang['hidethumbnails']), true, 300, '', true);
 $page_def[] = config_add_boolean_select('resource_view_modal', $lang['userpreference_resource_view_modal_label'], $enable_disable_options, 300, '', true);
 $page_def[] = config_add_boolean_select('basic_simple_search', $lang['userpreference_basic_simple_search_label'], $enable_disable_options, 300, '', true);
+$page_def[] = config_add_boolean_select('comments_resource_enable', $lang['systemconfig_comments'], $enable_disable_options, 300, '', true);
 $page_def[] = config_add_html('</div>');
 
 
@@ -126,6 +114,9 @@ $page_def[] = config_add_html('</div>');
 // Metadata section
 $page_def[] = config_add_html('<h3 class="CollapsibleSectionHead collapsed">' . $lang['metadata'] . '</h3><div id="SystemConfigMetadataSection" class="CollapsibleSection">');
 $page_def[] = config_add_boolean_select('metadata_report', $lang['metadata-report'], $enable_disable_options, 300, '', true);
+$page_def[] = config_add_boolean_select('metadata_read_default', $lang['embedded_metadata'], array($lang['embedded_metadata_donot_extract_option'], $lang['embedded_metadata_extract_option']), 300, '', true);
+$page_def[] = config_add_boolean_select('speedtagging', $lang['speedtagging'], $enable_disable_options, 300, '', true);
+
 $page_def[] = config_add_html('</div>');
 
 
@@ -239,6 +230,39 @@ if(is_array($plugin_specific_definition) && !empty($plugin_specific_definition))
     {
     $page_def = $plugin_specific_definition;
     }
+
+
+// Process autosaving requests
+// Note: $page_def must be defined by now in order to make sure we only save options that we've defined
+if('true' === getval('ajax', '') && 'true' === getval('autosave', ''))
+    {
+    $response['success'] = true;
+    $response['message'] = '';
+
+    $autosave_option_name  = getvalescaped('autosave_option_name', '');
+    $autosave_option_value = getvalescaped('autosave_option_value', '');
+
+    // Search for the option name within our defined (allowed) options
+    // if it is not there, error and don't allow saving it
+    $page_def_option_index = array_search($autosave_option_name, array_column($page_def, 1));
+    if(false === $page_def_option_index)
+        {
+        $response['success'] = false;
+        $response['message'] = $lang['systemconfig_option_not_allowed_error'];
+
+        echo json_encode($response);
+        exit();
+        }
+
+    if(!set_config_option(null, $autosave_option_name, $autosave_option_value))
+        {
+        $response['success'] = false;
+        }
+
+    echo json_encode($response);
+    exit();
+    }
+
 
 config_process_file_input($page_def, 'system/config', $baseurl . '/pages/admin/admin_system_config.php');
 process_config_options();

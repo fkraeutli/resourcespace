@@ -96,6 +96,7 @@ function get_user_collections($user,$find="",$order_by="name",$sort="ASC",$fetch
 	}
 }	
 
+if (!function_exists("get_collection")){
 function get_collection($ref)
 	{
 	# Returns all data for collection $ref
@@ -132,6 +133,7 @@ function get_collection($ref)
 		$return["request_feedback"]=$request_feedback;
 		return $return;}
 	}
+}
 
 function get_collection_resources($collection)
 	{
@@ -180,14 +182,15 @@ function add_resource_to_collection($resource,$collection,$smartadd=false,$size=
 			}
 		
 		hook("Addtocollectionsuccess", "", array( "resourceId" => $resource, "collectionId" => $collection ) );
-		sql_query("delete from collection_resource where resource='$resource' and collection='$collection'");
-		sql_query("insert into collection_resource(resource,collection,purchase_size) values ('$resource','$collection','$size')");
+		
+		if(!hook("addtocollectionsql", "", array( $resource,$collection, $size)))
+			{
+			sql_query("delete from collection_resource where resource='$resource' and collection='$collection'");
+			sql_query("insert into collection_resource(resource,collection,purchase_size) values ('$resource','$collection','$size')");
+			}
 		
 		#log this
 		collection_log($collection,"a",$resource);
-		
-		
-
 		return true;
 		}
 	else
@@ -197,13 +200,17 @@ function add_resource_to_collection($resource,$collection,$smartadd=false,$size=
 		}
 	}
 
-function remove_resource_from_collection($resource,$collection,$smartadd=false)
+function remove_resource_from_collection($resource,$collection,$smartadd=false,$size="")
 	{
 	if (collection_writeable($collection)||$smartadd)
 		{	
 		hook("Removefromcollectionsuccess", "", array( "resourceId" => $resource, "collectionId" => $collection ) );
-		sql_query("delete from collection_resource where resource='$resource' and collection='$collection'");
-		sql_query("delete from external_access_keys where resource='$resource' and collection='$collection'");
+		
+		if(!hook("removefromcollectionsql", "", array( $resource,$collection, $size)))
+			{
+			sql_query("delete from collection_resource where resource='$resource' and collection='$collection'");
+			sql_query("delete from external_access_keys where resource='$resource' and collection='$collection'");
+			}
 		
 		#log this
 		collection_log($collection,"r",$resource);
@@ -336,7 +343,7 @@ function delete_collection($ref)
 	# Deletes the collection with reference $ref
 	global $home_dash;
 	
-	hook("beforedeletecollection");
+	hook("beforedeletecollection","",array($ref));
 	sql_query("delete from collection where ref='$ref'");
 	sql_query("delete from collection_resource where collection='$ref'");
 	sql_query("delete from collection_keyword where collection='$ref'");
@@ -400,10 +407,9 @@ function search_public_collections($search="", $order_by="name", $sort="ASC", $e
 	    	{
 	    	   if (substr($keywords[$n],0,16)=="collectiontitle:") $newsearch.=" ".substr($keywords[$n],16);    // wildcard * - %
 	    	}
-	    	if (strpos($newsearch,"*")===false) $newsearch.="%";
-	    	else $newsearch=str_replace("*", "%", $newsearch);
-	    	$newsearch=trim($newsearch);
-	    	$sql="and c.name like '$newsearch'";
+
+        $newsearch = strpos($newsearch,'*')===false ? '%' . trim($newsearch) . '%' : str_replace('*', '%', trim($newsearch));
+        $sql="and c.name like '$newsearch'";
 	    	
 	    }
 	if (strlen($search)>1 || is_numeric($search))
@@ -484,9 +490,9 @@ function search_public_collections($search="", $order_by="name", $sort="ASC", $e
 }
 
 
-function do_collections_search($search,$restypes,$archive=0)
+function do_collections_search($search,$restypes,$archive=0,$order_by,$sort)
     {
-    global $search_includes_themes, $search_includes_public_collections, $search_includes_user_collections, $userref;
+    global $search_includes_themes, $search_includes_public_collections, $search_includes_user_collections, $userref, $collection_search_includes_resource_metadata;
     $result=array();
     
     # Recognise a quoted search, which is a search for an exact string
@@ -509,8 +515,22 @@ function do_collections_search($search,$restypes,$archive=0)
 
     if ($search_includes_themes_now || $search_includes_public_collections_now || $search_includes_user_collections_now)
         {
-        
-        $collections=search_public_collections($search,"theme","ASC",!$search_includes_themes_now,!$search_includes_public_collections_now,true,false, $search_includes_user_collections_now);
+        if ($collection_search_includes_resource_metadata)
+		{
+		# Include metadata from resources when searching - using a special search
+	        $collections=do_search("!contentscollection"
+				. ($search_includes_user_collections_now?'U':'')
+				. ($search_includes_public_collections_now?'P':'')
+				. ($search_includes_themes_now?'T':'')
+				. " " . $search,"",$order_by,0,-1,$sort);
+		}
+	else
+		{
+		# The old way - same search as when searching within publich collections.
+		$collections=search_public_collections($search,"theme","ASC",!$search_includes_themes_now,!$search_includes_public_collections_now,true,false, $search_includes_user_collections_now);
+		}
+	
+	
         $condensedcollectionsresults=array();
         $result=$collections;
 
@@ -872,128 +892,95 @@ function get_themes($themes=array(""),$subthemes=false)
 function get_smart_theme_headers()
 	{
 	# Returns a list of smart theme headers, which are basically fields with a 'smart theme name' set.
-	return sql_query("select ref,name,smart_theme_name,type from resource_type_field where length(smart_theme_name)>0 order by smart_theme_name");
+	return sql_query("SELECT ref, name, smart_theme_name, type FROM resource_type_field WHERE length(smart_theme_name) > 0 ORDER BY smart_theme_name");
 	}
 
-if (!function_exists("get_smart_themes")){	
-function get_smart_themes($field,$node=0,$themebar=false)
-	{
-	# Returns a list of smart themes (which are really field options).
-	# The results are filtered so that only field options that are in use are returned.
-	
-	# Fetch field info
-	$fielddata=sql_query("select * from resource_type_field where ref='$field'");
-	if (count($fielddata)>0) {$fielddata=$fielddata[0];} else {return false;}
-					
-	# Return a list of keywords that are in use for this field
-    global $smart_themes_omit_archived;
-	
-	$inuse=sql_array("SELECT k.keyword value FROM keyword k JOIN resource_keyword rk ON k.ref = rk.keyword " .
-		(($smart_themes_omit_archived) ? "JOIN resource r ON rk.resource = r.ref" : "") .
-		" WHERE resource_type_field = '$field' AND resource > 0 " .
-		(($smart_themes_omit_archived) ? "AND archive= 0 " : "") .
-		" GROUP BY MD5(k.keyword)"
-	);
-	
-	if ($fielddata["type"]==7)
-		{
-		# Category tree style view
-		$tree=explode("\n",$fielddata["options"]);
+function get_smart_themes_nodes($field, $is_category_tree, $parent = null)
+    {
+    global $smart_themes_omit_archived, $themes_category_split_pages;
 
-		$return=array();	
-		
-		global $themes_category_split_pages;
-		if ($themes_category_split_pages && !$themebar)
-			{
-			# Return one level only, unless grabbing for themebar
-			$levels=1;
-			}
-		else
-			{
-			# Return an infinite number of levels
-			$levels=-1;
-			}
-		$return=populate_smart_theme_tree_node($tree,$node,$return,0,$levels);
-		
-		# For each option, if it is in use, add it to the return list.
-		$out=array();
-		for ($n=0;$n<count($return);$n++)
-			{
-			# Prepare a 'tidied' local language version of the name to use for the comparison
-			# Only return items that are in use.
-			$tidy=escape_check(cleanse_string(trim(mb_strtolower(str_replace("-"," ",htmlspecialchars_decode(i18n_get_collection_name($return[$n]))))),false));
-			if (in_array($tidy,$inuse))
-				{
-				$c=count($out);
-				$out[$c]["indent"]=$return[$n]["indent"];
-				$out[$c]["name"]=trim(htmlspecialchars_decode(i18n_get_collection_name($return[$n])));
-				$out[$c]["node"]=$return[$n]["node"];
-				$out[$c]["children"]=$return[$n]["children"];
-				}
-			}
-		return $out;
-		}
-	else
-		{
-		# Standard checkbox list or drop-down box
-		
-		# Fetch raw options list
-		$options=explode(",",$fielddata["options"]);
-		
-		# Tidy list so it matches the storage format used for keywords.
-		# The translated version is fetched as each option will be indexed in the local language version of each option.
-		$options_base=array();
-		for ($n=0;$n<count($options);$n++) {$options_base[$n]=escape_check(trim(mb_convert_case(i18n_get_translated($options[$n]), MB_CASE_LOWER, "UTF-8")));}
-		
-		# For each option, if it is in use, add it to the return list.
-		$return=array();
-		for ($n=0;$n<count($options);$n++)
-			{
-			#echo "<li>Looking for " . $options_base[$n] . " in " . join (",",$inuse);
-			if (in_array(str_replace("-"," ",$options_base[$n]),$inuse)) 		
-				{
-				$c=count($return);
-				$return[$c]["name"]=trim(i18n_get_translated($options[$n]));
-				$return[$c]["indent"]=0;
-				$return[$c]["node"]=0;
-				$return[$c]["children"]=0;
-				}
-			}
-		return $return;
-		}
-	}
-}
+    $return = array();
 
-function populate_smart_theme_tree_node($tree,$node,$return,$indent,$levels)
-	{
-	
-	# When displaying category trees as smart themes, this function is used to recursively
-	# parse each node adding items sequentially with an appropriate indent level.
-	for ($n=0;$n<count($tree);$n++)
-		{
-		$s=explode(",",$tree[$n]);
-		if (isset($s[1]) && $s[1]==$node)
-			{
-			# Add this node
-			$c=count($return);
-			$return[$c]["indent"]=$indent;
-			$return[$c]["name"]=$s[2];
-			$return[$c]["node"]=$n+1;
-			
-			# Add child count
-			$children=populate_smart_theme_tree_node($tree,$n+1,array(),0,1);
-			$return[$c]["children"]=count($children);
-			
-			if ($levels>0) {$levels--;}
-			if ($levels>0 || $levels==-1)
-				{
-				# Cascade
-				$return=populate_smart_theme_tree_node($tree,$n+1,$return,$indent+1,$levels);
-				}
-			}
-		}
-	return $return;
-	}
+    // Determine if this should cascade onto children for category tree type
+    $recursive = false;
+    if($is_category_tree && !$themes_category_split_pages)
+        {
+        $recursive = true;
+        }
+
+    $nodes = get_nodes($field, ((0 == $parent) ? null : $parent), $recursive);
+
+    if(0 === count($nodes))
+        {
+        return $return;
+        }
+
+    // Return a list of keywords that are in use for this field
+    $keywords_in_use_sql = 'SELECT k.keyword AS `value` FROM keyword k JOIN resource_keyword rk ON k.ref = rk.keyword';
+    if($smart_themes_omit_archived)
+        {
+        $keywords_in_use_sql .= ' JOIN resource r ON rk.resource = r.ref';
+        }
+    $keywords_in_use_sql .= " WHERE resource_type_field = '{$field}' AND resource > 0";
+    if($smart_themes_omit_archived)
+        {
+        $keywords_in_use_sql .= " AND archive = 0";
+        }
+    $keywords_in_use_sql .= ' GROUP BY MD5(k.keyword)';
+    $keywords_in_use = sql_array($keywords_in_use_sql);
+
+    /*
+    Tidy list so it matches the storage format used for keywords
+    The translated version is fetched as each option will be indexed in the local language version of each option
+    */
+    $options_base = array();
+    for($n = 0; $n < count($nodes); $n++)
+        {
+        $options_base[$n] = escape_check(trim(mb_convert_case(i18n_get_translated($nodes[$n]['name']), MB_CASE_LOWER, 'UTF-8')));
+        }
+    
+    // For each option, if it is in use, add it to the return list
+    for($n = 0; $n < count($nodes); $n++)
+        {
+        //$cleaned_option_base = str_replace('-', ' ', $options_base[$n]);
+        $cleaned_option_base = preg_replace('/\W/',' ',$options_base[$n]);      // replace any non-word characters with a space
+        $cleaned_option_base = trim($cleaned_option_base);      // trim (just in case prepended / appended space characters)
+
+        if(!in_array($cleaned_option_base, $keywords_in_use))
+            {
+            continue;
+            }
+
+        $tree_node_depth    = 0;
+        $parent_node_to_use = 0;
+        $is_parent          = false;
+
+        if($is_category_tree)
+            {
+            if(is_parent_node($nodes[$n]['ref']))
+                {
+                $parent_node_to_use = $nodes[$n]['ref'];
+                $is_parent          = true;
+                }
+
+            $tree_node_depth = get_tree_node_level($nodes[$n]['ref']);
+
+            if(!is_null($parent) && is_parent_node($parent))
+                {
+                $tree_node_depth--;
+                }
+            }
+
+        $c                       = count($return);
+        $return[$c]['name']      = trim(i18n_get_translated($nodes[$n]['name']));
+        $return[$c]['indent']    = $tree_node_depth;
+        $return[$c]['node']      = $parent_node_to_use;
+        $return[$c]['is_parent'] = $is_parent;
+        $return[$c]['ref'] = $nodes[$n]['ref'];
+        }
+
+    return $return;
+    }
 
 if (!function_exists("email_collection")){
 function email_collection($colrefs,$collectionname,$fromusername,$userlist,$message,$feedback,$access=-1,$expires="",$useremail="",$from_name="",$cc="",$themeshare=false,$themename="",$themeurlsuffix="",$list_recipients=false, $add_internal_access=false,$group="")
@@ -1382,7 +1369,7 @@ function allow_multi_edit($collection)
 	# also applies edit filter, since it uses get_resource_access
 
 	if (!is_array($collection)){ // collection is an array of resource data
-		$collection=do_search("!collection" . $collection);
+        $collection=do_search("!collection" . $collection);
 
 	}
 	for ($n=0;$n<count($collection);$n++){
@@ -1408,45 +1395,36 @@ function allow_multi_edit($collection)
 	}
 }	
 
-function get_theme_image($themes=array())
+function get_theme_image($themes=array(),$collection="")
 	{
 	# Returns an array of resource references that can be used as theme category images.
 	global $theme_images_number;
 	global $theme_category_levels;
-	# First try to find resources that have been specifically chosen using the option on the collection comments page.
-	$sql="select r.ref value from collection c join collection_resource cr on c.ref=cr.collection join resource r on cr.resource=r.ref where c.theme='" . escape_check($themes[0]) . "' ";
-	for ($n=2;$n<=count($themes)+1;$n++){
-		if (isset($themes[$n-1])){
-			$sql.=" and theme".$n."='" . escape_check($themes[$n-1]) . "' ";
-		} 
-		else {
-			if ($n<=$theme_category_levels){
-				$sql.=" and (theme".$n."='' or theme".$n." is null) ";
-			}
-		}
-	} 
-
-	$sql.=" and r.has_image=1 and cr.use_as_theme_thumbnail=1 order by r.ref desc";
-	$chosen=sql_array($sql,0);
-	if (count($chosen)>0) {return $chosen;}
+	# Resources that have been specifically chosen using the option on the collection comments page will be returned first based on order by.
 	
-	# No chosen images? Manually choose a single image based on hit counts.
-	$sql="select r.ref value from collection c join collection_resource cr on c.ref=cr.collection join resource r on cr.resource=r.ref where c.theme='" . escape_check($themes[0]) . "' ";
+	$sqlselect="select r.ref value from collection c join collection_resource cr on c.ref=cr.collection join resource r on cr.resource=r.ref where c.public=1 and c.theme='" . escape_check($themes[0]) . "' ";
+	$orderby=" order by cr.use_as_theme_thumbnail desc";
 	for ($n=2;$n<=count($themes)+1;$n++){
 		if (isset($themes[$n-1])){
-			$sql.=" and theme".$n."='" . escape_check($themes[$n-1]) . "' ";
+			$sqlselect.=" and theme".$n."='" . escape_check($themes[$n-1]) . "' ";
 		} 
 		else {
 			if ($n<=$theme_category_levels){
-			$sql.=" and (theme".$n."='' or theme".$n." is null) ";
+				# Resources in sub categories can be used but should be below those in the current category
+				$orderby.=", theme".$n . " ";
 			}
 		}
 	} 
-	$sql.=" and r.has_image=1 order by r.hit_count desc limit " . $theme_images_number;
-	$images=sql_array($sql,0);
 
-	$tmp = hook("getthemeimage", "", array($themes)); if($tmp!==false and is_array($tmp) and count($tmp)>0) $images = $tmp;
-
+	if($collection!="")
+		{
+		$sqlselect.=" and c.ref = '" . escape_check($collection) .  "'";
+		}
+	
+	$sqlselect.=" and r.has_image=1 ";
+	$orderby.=",r.hit_count desc,r.ref desc";
+	$sql = $sqlselect . $orderby . " limit " .$theme_images_number;
+	$images=sql_array($sql,0);	
 	if (count($images)>0) {return $images;}
 	return false;
 	}
@@ -1625,13 +1603,24 @@ function send_collection_feedback($collection,$comment)
 	
 	
 	$cc=getval("email","");
-	If (filter_var($cc, FILTER_VALIDATE_EMAIL)) {
+	get_config_option($user['ref'],'email_user_notifications', $send_email);
+	// Always send a mail for the feedback whatever the user preference, since the  feedback may be very long so can then refer to the CC'd email
+	if (filter_var($cc, FILTER_VALIDATE_EMAIL))
+		{
 		send_mail($user["email"],$applicationname . ": " . $lang["collectionfeedback"] . " - " . $cinfo["name"],$body,"","","",NULL,"",$cc);
 		}
 	else
 		{
 		send_mail($user["email"],$applicationname . ": " . $lang["collectionfeedback"] . " - " . $cinfo["name"],$body);
 		}
+		
+	if(!$send_email)
+		{
+		// Add a system notification message as well if the user has not 'opted out'
+		global $userref;
+		message_add($user["ref"],$lang["collectionfeedback"] . " - " . $cinfo["name"] . "<br />" . $body,"",(isset($userref))?$userref:$user['ref'],MESSAGE_ENUM_NOTIFICATION_TYPE_SCREEN,60 * 60 *24 * 30);
+		}
+			
 	
 	# Cancel the feedback request for this resource.
 	/* - Commented out - as it may be useful to leave the feedback request in case the user wishes to leave
@@ -1677,23 +1666,23 @@ function collection_is_research_request($collection)
 }	
 
 if (!function_exists("add_to_collection_link")){
-function add_to_collection_link($resource,$search="",$extracode="",$size="")
+function add_to_collection_link($resource,$search="",$extracode="",$size="",$class="")
     {
     # Generates a HTML link for adding a resource to a collection
     global $lang;
 
-    return "<a class=\"addToCollection\" href=\"#\" title=\"" . $lang["addtocurrentcollection"] . "\" onClick=\"AddResourceToCollection(event,'" . $resource . "','" . $size . "');" . $extracode . "return false;\">";
+    return "<a class=\"addToCollection " . $class . "\" href=\"#\" title=\"" . $lang["addtocurrentcollection"] . "\" onClick=\"AddResourceToCollection(event,'" . $resource . "','" . $size . "');" . $extracode . "return false;\">";
 
     }
 }
 
 if (!function_exists("remove_from_collection_link")){		
-function remove_from_collection_link($resource,$search="")
+function remove_from_collection_link($resource,$search="",$class="")
     {
     # Generates a HTML link for removing a resource to a collection
     global $lang, $pagename;
 
-    return "<a class=\"removeFromCollection\" href=\"#\" title=\"" . $lang["removefromcurrentcollection"] . "\" onClick=\"RemoveResourceFromCollection(event,'" . $resource . "','" . $pagename . "');return false;\">";
+    return "<a class=\"removeFromCollection " . $class . "\" href=\"#\" title=\"" . $lang["removefromcurrentcollection"] . "\" onClick=\"RemoveResourceFromCollection(event,'" . $resource . "','" . $pagename . "');return false;\">";
 
     }
 }
@@ -1702,7 +1691,7 @@ function change_collection_link($collection)
     {
     # Generates a HTML link for adding a changing the current collection
     global $lang;
-    return '<a onClick="ChangeCollection('.$collection.',\'\');return false;" href="collections.php?collection='.$collection.'">&gt;&nbsp;'.$lang["selectcollection"].'</a>';
+    return '<a onClick="ChangeCollection('.$collection.',\'\');return false;" href="collections.php?collection='.$collection.'">' . LINK_CARET . $lang["selectcollection"].'</a>';
     }
 if(!function_exists("get_collection_external_access")){
 function get_collection_external_access($collection)
@@ -1784,23 +1773,33 @@ function collection_max_access($collection)
 	return $maxaccess;
 	}
 
-function collection_min_access($collection)	
-	{
-	# Returns the minimum access (the least permissive) that the current user has to the resources in $collection.
-	$minaccess=0;
-	if (is_array($collection)){$result=$collection;}
-	else {
-		$result=do_search("!collection" . $collection,"","relevance",0,-1,"desc",false,"",false,"");
-	}
-	for ($n=0;$n<count($result);$n++)
-		{
-		$ref=$result[$n]["ref"];
-		# Load access level
-		$access=get_resource_access($result[$n]);
-		if ($access>$minaccess) {$minaccess=$access;}
-		}
-	return $minaccess;
-	}
+function collection_min_access($collection)
+    {
+    # Returns the minimum access (the least permissive) that the current user has to the resources in $collection.
+    $minaccess = 0;
+    if(is_array($collection))
+        {
+        $result = $collection;
+        }
+    else
+        {
+        $result = do_search("!collection{$collection}", '', 'relevance', 0, -1, 'desc', false, '', false, '');
+        }
+
+    for($n = 0; $n < count($result); $n++)
+        {
+        $ref = $result[$n]['ref'];
+
+        # Load access level
+        $access = get_resource_access($result[$n]);
+        if($access > $minaccess)
+            {
+            $minaccess = $access;
+            }
+        }
+
+    return $minaccess;
+    }
 	
 function collection_set_public($collection)
 	{
@@ -1971,16 +1970,25 @@ function update_collection_user($collection,$newuser)
 	sql_query("UPDATE collection SET user='$newuser' WHERE ref='$collection'");  
 	return true;	
 	}
-	
-function compile_collection_actions(array $collection_data, $top_actions)
+
+if(!function_exists("compile_collection_actions")){	
+function compile_collection_actions(array $collection_data, $top_actions, $resource_data=array())
     {
     global $baseurl_short, $lang, $k, $userrequestmode, $zipcommand, $collection_download, $contact_sheet,
            $manage_collections_contact_sheet_link, $manage_collections_share_link, $allow_share,
            $manage_collections_remove_link, $userref, $collection_purge, $show_edit_all_link, $result,
            $edit_all_checkperms, $preview_all, $order_by, $sort, $archive, $contact_sheet_link_on_collection_bar,
            $show_searchitemsdiskusage, $emptycollection, $remove_resources_link_on_collection_bar, $count_result,
-           $download_usage, $home_dash, $top_nav_upload_type, $pagename, $offset, $col_order_by, $find, $default_sort,
-           $starsearch, $restricted_share, $hidden_collections;
+           $download_usage, $home_dash, $top_nav_upload_type, $pagename, $offset, $col_order_by, $find, $default_sort, $default_collection_sort, $starsearch, $restricted_share, $hidden_collections, $internal_share_access, $search, $usercollection, $geo_locate_collection;
+           
+	if(isset($search) && substr($search, 0, 11) == '!collection' && ($k == '' || $internal_share_access))
+		{ 
+		# Extract the collection number - this bit of code might be useful as a function
+    	$search_collection = explode(' ', $search);
+    	$search_collection = str_replace('!collection', '', $search_collection[0]);
+    	$search_collection = explode(',', $search_collection); // just get the number
+    	$search_collection = escape_check($search_collection[0]);
+    	}
 
     $options = array();
 	$o=0;
@@ -1989,7 +1997,12 @@ function compile_collection_actions(array $collection_data, $top_actions)
         {
         return $options;
         }
-
+	
+	if(empty($order_by))
+    	{
+		$order_by = $default_collection_sort;
+		}
+	
     if(!collection_is_research_request($collection_data['ref']) || !checkperm('r'))
         {
         if(!$top_actions && checkperm('s') && $pagename === 'collections')
@@ -2039,16 +2052,19 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Select collection option - not for collection bar
-    if($pagename != 'collections' && $k == '' && !checkperm('b')
-    	&& ($pagename == 'themes' || $pagename === 'collection_manage' || $pagename === 'resource_collection_list' || $top_actions))
+    if($pagename != 'collections' && ($k == '' || $internal_share_access) && !checkperm('b')
+        && ($pagename == 'themes' || $pagename === 'collection_manage' || $pagename === 'resource_collection_list' || $top_actions)
+        && ((isset($search_collection) && isset($usercollection) && $search_collection != $usercollection) || !isset($search_collection))
+        && collection_readable($collection_data['ref'])
+    )
         {
         $options[$o]['value'] = 'select_collection';
-		$options[$o]['label'] = $lang['selectcollection'];
-		$o++;
+        $options[$o]['label'] = $lang['selectcollection'];
+        $o++;
         }
 
     // Edit Collection
-    if((($userref == $collection_data['user']) || (checkperm('h')))  && $k == '') 
+    if((($userref == $collection_data['user']) || (checkperm('h')))  && ($k == '' || $internal_share_access)) 
         {
         $extra_tag_attributes = sprintf('
                 data-url="%spages/collection_edit.php?ref=%s"
@@ -2065,7 +2081,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Upload to collection
-    if(((checkperm('c') || checkperm('d')) && $collection_data['savedsearch'] == 0 && ($userref == $collection_data['user'] || $collection_data['allow_changes'] == 1 || checkperm('h'))) && $k == '')
+    if(((checkperm('c') || checkperm('d')) && $collection_data['savedsearch'] == 0 && ($userref == $collection_data['user'] || $collection_data['allow_changes'] == 1 || checkperm('h'))) && ($k == '' || $internal_share_access))
         {
         $data_attribute['url'] = sprintf('%spages/edit.php?uploader=%s&ref=-%s&collection_add=%s',
             $baseurl_short,
@@ -2081,13 +2097,15 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Home_dash is on, AND NOT Anonymous use, AND (Dash tile user (NOT with a managed dash) || Dash Tile Admin)
-    if(!$top_actions && $home_dash && $k == '' && checkPermission_dashcreate())
+    if(!$top_actions && $home_dash && ($k == '' || $internal_share_access) && checkPermission_dashcreate())
         {
         $data_attribute['url'] = sprintf('
-            %spages/dash_tile.php?create=true&tltype=srch&promoted_resource=true&freetext=true&all_users=1&link=/pages/search.php?search=!collection%s&order_by=relevance&sort=DESC
+            %spages/dash_tile.php?create=true&tltype=srch&promoted_resource=true&freetext=true&all_users=1&link=/pages/search.php?search=!collection%s&order_by=%s&sort=%s
             ',
             $baseurl_short,
-            $collection_data['ref']
+            $collection_data['ref'],
+            $order_by,
+            $sort
         );
 
         $options[$o]['value']='save_collection_to_dash';
@@ -2097,7 +2115,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Request all
-    if($count_result > 0)
+    if($count_result > 0 && ($k == '' || $internal_share_access))
         {
         # Ability to request a whole collection (only if user has restricted access to any of these resources)
         $min_access = collection_min_access($result);
@@ -2115,6 +2133,19 @@ function compile_collection_actions(array $collection_data, $top_actions)
             }
         }
 
+	if($geo_locate_collection)
+        {
+            $data_attribute['url'] = sprintf('%spages/geolocate_collection.php?ref=%s',
+                $baseurl_short,
+		urlencode($collection_data['ref'])
+            );
+            $options[$o]['value']='geolocatecollection';
+            $options[$o]['label']=$lang["geolocatecollection"];
+            $options[$o]['data_attr']=$data_attribute;
+            $o++;
+            
+        }
+	
     // Download option
     if($download_usage && ((isset($zipcommand) || $collection_download) && $count_result > 0))
         {
@@ -2132,17 +2163,9 @@ function compile_collection_actions(array $collection_data, $top_actions)
 		$options[$o]['data_attr']=$data_attribute;
 		$o++;
         }
-    else if(isset($zipcommand) || $collection_download) 
-        {
-        $data_attribute['url'] = $baseurl_short . "pages/terms.php?k=" . urlencode($k) . "&url=pages/collection_download.php?collection=" . urlencode($collection_data['ref']) ."%26k=" . urlencode($k);
-        $options[$o]['value']='download_collection';
-		$options[$o]['label']=$lang['action-download'];
-		$options[$o]['data_attr']=$data_attribute;
-		$o++;
-        }
 
     // Contact Sheet
-    if($k=="" && $contact_sheet == true && ($manage_collections_contact_sheet_link || $contact_sheet_link_on_collection_bar))
+    if(0 < $count_result && ($k=="" || $internal_share_access) && $contact_sheet == true && ($manage_collections_contact_sheet_link || $contact_sheet_link_on_collection_bar))
         {
         $data_attribute = array(
             'url' => sprintf('%spages/contactsheet_settings.php?ref=%s',
@@ -2158,7 +2181,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Share
-    if($k=="" && $manage_collections_share_link && $allow_share && (checkperm('v') || checkperm ('g') || (collection_min_access($collection_data['ref'])<=1 && $restricted_share))) 
+    if(0 < $count_result && ($k=="" || $internal_share_access) && $manage_collections_share_link && $allow_share && (checkperm('v') || checkperm ('g') || (collection_min_access($collection_data['ref'])<=1 && $restricted_share))) 
         {
         $extra_tag_attributes = sprintf('
                 data-url="%spages/collection_share.php?ref=%s"
@@ -2175,7 +2198,12 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Remove
-    if($k=="" && $manage_collections_remove_link && $userref != $collection_data['user'] && !checkperm('b'))
+    if(($k=="" || $internal_share_access)
+        && $manage_collections_remove_link
+        && $userref != $collection_data['user']
+        && !checkperm('b')
+        && collection_readable($collection_data['ref'])
+    )
         {
         $options[$o]['value']='remove_collection';
 		$options[$o]['label']=$lang['action-remove'];
@@ -2183,7 +2211,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Delete
-    if($k=="" && (($userref == $collection_data['user']) || checkperm('h')) && ($collection_data['cant_delete'] == 0)) 
+    if(($k=="" || $internal_share_access) && (($userref == $collection_data['user']) || checkperm('h')) && ($collection_data['cant_delete'] == 0)) 
         {
         $options[$o]['value']='delete_collection';
 		$options[$o]['label']=$lang['action-delete'];
@@ -2191,7 +2219,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Collection Purge
-    if($k=="" && $collection_purge && isset($collections) && checkperm('e0') && $collection_data['cant_delete'] == 0)
+    if(($k=="" || $internal_share_access) && $collection_purge && isset($collections) && checkperm('e0') && $collection_data['cant_delete'] == 0)
         {
         $options[$o]['value']='purge_collection';
 		$options[$o]['label']=$lang['purgeanddelete'];
@@ -2199,7 +2227,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Collection log
-    if($k=="" && ($userref== $collection_data['user'] || (checkperm('h'))))
+    if(($k=="" || $internal_share_access) && ($userref== $collection_data['user'] || (checkperm('h'))))
         {
         $extra_tag_attributes = sprintf('
                 data-url="%spages/collection_log.php?ref=%s"
@@ -2216,7 +2244,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
         
     // View all
-    if($k=="" && (isset($collection_data["c"]) && $collection_data["c"]>0) || count($result) > 0)
+    if(($k=="" || $internal_share_access) && (isset($collection_data["c"]) && $collection_data["c"]>0) || count($result) > 0)
         {
         $data_attribute['url'] =  $baseurl_short . 'pages/search.php?search=!collection' . urlencode($collection_data['ref']) . "&k=" . urlencode($k);
         $options[$o]['value']='view_all_resources_in_collection';
@@ -2225,11 +2253,14 @@ function compile_collection_actions(array $collection_data, $top_actions)
 		$o++;
         }
 
+    // work this out in one place to prevent multiple calls as function is expensive
+    $allow_multi_edit=allow_multi_edit(empty($resource_data) ? $collection_data['ref'] : $resource_data);
+
     // Edit all
     # If this collection is (fully) editable, then display an edit all link
-    if($k=="" && $show_edit_all_link && (count($result) > 0))
+    if(($k=="" || $internal_share_access) && $show_edit_all_link && (count($result) > 0))
         {
-        if(!$edit_all_checkperms || allow_multi_edit($collection_data['ref'])) 
+        if(!$edit_all_checkperms || $allow_multi_edit)
             {
             $extra_tag_attributes = sprintf('
                     data-url="%spages/edit.php?collection=%s"
@@ -2248,12 +2279,12 @@ function compile_collection_actions(array $collection_data, $top_actions)
 
     // Delete all
     // Note: functionality moved from edit collection page
-    if($k=="" 
+    if(($k=="" || $internal_share_access) 
 		&& !$top_actions
         && (count($result) != 0 || $count_result != 0)
         && !(isset($allow_resource_deletion) && !$allow_resource_deletion)
         && collection_writeable($collection_data['ref'])
-        && allow_multi_edit($collection_data['ref'])
+        && $allow_multi_edit
         && !checkperm('D'))
         {
         $options[$o]['value']='delete_all_in_collection';
@@ -2262,7 +2293,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Preview all
-    if(count($result) != 0 && $k == '' && $preview_all)
+    if(count($result) != 0 && ($k=="" || $internal_share_access) && $preview_all)
         {
         $extra_tag_attributes = sprintf('
                 data-url="%spages/preview_all.php?ref=%s"
@@ -2279,7 +2310,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // Remove all
-    if($k == '' && isset($emptycollection) && $remove_resources_link_on_collection_bar && collection_writeable($collection_data['ref']))
+    if(0 < $count_result && ($k=="" || $internal_share_access) && isset($emptycollection) && $remove_resources_link_on_collection_bar && collection_writeable($collection_data['ref']))
         {
         $data_attribute['url'] = sprintf('%spages/collections.php?emptycollection=%s&removeall=true&submitted=removeall&ajax=true',
             $baseurl_short,
@@ -2293,7 +2324,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
     
     // Edit Previews
-	if ($k == '' && $count_result > 0 && ($userref == $collection_data['user'] || $collection_data['allow_changes'] == 1 || checkperm('h')) && allow_multi_edit($collection_data['ref']))
+	if (($k=="" || $internal_share_access) && $count_result > 0 && ($userref == $collection_data['user'] || $collection_data['allow_changes'] == 1 || checkperm('h')) && $allow_multi_edit)
 		{
 		$main_pages   = array('search', 'collection_manage', 'collection_public', 'themes');
 		$back_to_page = (in_array($pagename, $main_pages) ? htmlspecialchars($pagename) : '');
@@ -2315,7 +2346,7 @@ function compile_collection_actions(array $collection_data, $top_actions)
 		}
 
     // Show disk usage
-    if($k == '' && !$top_actions && $show_searchitemsdiskusage) 
+    if(($k=="" || $internal_share_access) && !$top_actions && $show_searchitemsdiskusage && 0 < $count_result) 
         {
         $extra_tag_attributes = sprintf('
                 data-url="%spages/search_disk_usage.php?search=!collection%s&k=%s"
@@ -2333,12 +2364,12 @@ function compile_collection_actions(array $collection_data, $top_actions)
         }
 
     // CSV export of collection metadata
-    if(!$top_actions && $k == '')
+    if(0 < $count_result 
+        && !$top_actions
+        && ($k =='' || $internal_share_access)
+        && collection_readable($collection_data['ref'])
+    )
         {
-    	if(empty($order_by))
-    		{
-			$order_by = $default_sort;
-    		}
 
         $options[$o]['value']            = 'csv_export_results_metadata';
 		$options[$o]['label']            = $lang['csvExportResultsMetadata'];
@@ -2381,3 +2412,4 @@ function compile_collection_actions(array $collection_data, $top_actions)
 
     return $options;
     }
+}

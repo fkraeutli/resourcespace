@@ -1,11 +1,20 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
-$k=getvalescaped("k","");if ($k=="") {include "../include/authenticate.php";} 
+include_once "../include/general.php";
 include_once "../include/collections_functions.php";
+$ref=getval("ref","",true);
+$k=getvalescaped("k","");if ($k=="" || !check_access_key_collection($ref,$k)) {include "../include/authenticate.php";}
+
+if (!checkperm('q')){exit($lang["error-permissiondenied"]);}
+
 include "../include/request_functions.php";
 
-$ref=getval("ref","",true);
+if ($k!="" && (!isset($internal_share_access) || !$internal_share_access) && $prevent_external_requests)
+	{
+	echo "<script>window.location = '" .  $baseurl . "/login.php?error="  . (($allow_account_request)?"signin_required_request_account":"signin_required") . "'</script>";
+	exit();
+	}
+
 $cinfo=get_collection($ref);
 $error=false;
 
@@ -40,7 +49,18 @@ if (getval("save","")!="")
 include "../include/header.php";
 ?>
 
-<div class="BasicsBox"> 
+<div class="BasicsBox">
+  <?php 
+  $backlink=getvalescaped("backlink","");
+  if($backlink!="")
+	{
+	?><p>
+	  <a href='<?php echo rawurldecode($backlink); ?>'><?php echo LINK_CARET_BACK ?><?php echo $lang['back']; ?></a>
+	</p>
+	<?php
+	}?>
+		
+		
   <h1><?php echo $lang["requestcollection"]?></h1>
   <p><?php echo text("introtext")?></p>
   
@@ -55,6 +75,8 @@ include "../include/header.php";
 	</div>
 
 	<?php 
+	hook('collectionrequestdetail','',array($cinfo['ref']));
+	
 	# Only ask for user details if this is an external share. Otherwise this is already known from the user record.
 	if ($k!="") { ?>
 	<div class="Question">

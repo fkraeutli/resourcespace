@@ -6,7 +6,7 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";if (!checkperm("o")) {exit ("Permission denied.");}
 include "../../include/research_functions.php";
 include_once "../../include/collections_functions.php";
@@ -99,7 +99,7 @@ for ($n=$offset;(($n<count($text)) && ($n<($offset+$per_page)));$n++)
 	
 	<td><a href="<?php echo $url ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo highlightkeywords(tidy_trim(htmlspecialchars($text[$n]["text"]),100),$findtext,true)?></a></td>
 	
-	<td><div class="ListTools"><a href="<?php echo $url ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["action-edit"]?> </a></div></td>
+	<td><div class="ListTools"><a href="<?php echo $url ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["action-edit"]?> </a></div></td>
 	</tr>
 	<?php
 	}

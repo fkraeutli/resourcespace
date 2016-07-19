@@ -21,8 +21,21 @@ if (!hook("renderresultsmallthumb"))
 					$use_watermark=false;	
 					}
 				# Work out the preview image path
-				$col_url=get_resource_path($ref,false,"col",false,$result[$n]["preview_extension"],-1,1,$use_watermark,$result[$n]["file_modified"]);
-				if (isset($result[$n]["col_url"])) {$col_url=$result[$n]["col_url"];} # If col_url set in data, use instead, e.g. by manipulation of data via process_search_results hook
+				if (isset($result[$n]["col_url"]))
+					{$col_url=$result[$n]["col_url"];} # If col_url set in data, use instead, e.g. by manipulation of data via process_search_results hook
+				else
+					{
+					$col_path=get_resource_path($ref,true,"col",false,$result[$n]["preview_extension"],-1,1,$use_watermark,$result[$n]["file_modified"]);
+					if ($result[$n]["has_image"] && file_exists($col_path))
+						{
+						$col_url=get_resource_path($ref,false,"col",false,$result[$n]["preview_extension"],-1,1,$use_watermark,$result[$n]["file_modified"]);
+						}
+					else
+						{
+						$col_url=get_resource_path($ref,false,"col",false,$result[$n]["preview_extension"],-1,1,$use_watermark,$result[$n]["file_modified"]);
+						$col_url = $baseurl_short . "gfx/" . get_nopreview_icon($result[$n]["resource_type"],$result[$n]["file_extension"],"col");
+						}
+					}
 				?>
 				<table border="0" class="ResourceAlignSmall<?php hook('searchdecorateresourcetableclass'); ?>">
 				<?php hook("resourcetop");?>
@@ -113,7 +126,7 @@ if (!hook("renderresultsmallthumb"))
 					{
 					if ($result[$n]['user_rating']=="") {$result[$n]['user_rating']=0;}
 					$modified_user_rating=hook("modifyuserrating");
-					if ($modified_user_rating){$result[$n]['user_rating']=$modified_user_rating;}?>
+					if ($modified_user_rating!=''){$result[$n]['user_rating']=$modified_user_rating;}?>
 					<div  class="RatingStars" onMouseOut="UserRatingDisplay(<?php echo $result[$n]['ref']?>,<?php echo $result[$n]['user_rating']?>,'StarCurrent');">&nbsp;<?php
 				    for ($z=1;$z<=5;$z++)
 						{
@@ -159,7 +172,7 @@ if (!hook("renderresultsmallthumb"))
 					{
 					if (!hook("replaceresourcepanelinfosmall"))
 						{?>
-						<div class="ResourcePanelInfo">
+						<div class="ResourcePanelInfo ResourceTypeField<?php echo $df[$x]['ref']?>">
 							<div class="extended">
 							<?php 
 							if ($x==0)
@@ -194,7 +207,7 @@ if (!hook("renderresultsmallthumb"))
 					{ 
 					if (!hook("replaceresourcepanelinfosmallnormal"))
 						{ ?>
-						<div class="ResourcePanelInfo">
+						<div class="ResourcePanelInfo ResourceTypeField<?php echo $df[$x]['ref']?>">
 							<?php 
 							if ($x==0)
 								{ // add link if necessary ?>
@@ -224,7 +237,39 @@ if (!hook("renderresultsmallthumb"))
 			if (!hook("replaceresourceplaneliconssmall"))
 				{ ?>
 				<div class="ResourcePanelIcons">
-					<?php 
+					<?php
+					
+					if(!hook("smallthumbscheckboxes"))
+						{
+							if ($use_checkboxes_for_selection)
+								{
+								?>
+								<input 
+								type="checkbox" 
+								id="check<?php echo htmlspecialchars($ref)?>" 
+								class="checkselect" 
+								<?php 
+								if (in_array($ref,$collectionresources))
+										{ ?>
+										checked
+										<?php 
+										} ?> 
+								onclick="if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')=='checked'){ AddResourceToCollection(event,<?php echo htmlspecialchars($ref)?>); } else if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')!='checked'){ RemoveResourceFromCollection(event,<?php echo htmlspecialchars($ref)?>); }"
+						>
+						&nbsp;
+								<?php 
+								}
+							else
+								{
+								?>
+								<input type="checkbox" style="opacity: 0;">
+								<?php
+								}
+					
+						}	 # end hook thumbscheckboxes
+					
+					
+					
 					if ($display_resource_id_in_thumbnail && $ref>0) 
 						{ 
 						echo htmlspecialchars($ref); 
@@ -232,93 +277,15 @@ if (!hook("renderresultsmallthumb"))
 				} /* end hook replaceresourcepaneliconssmall */
 			hook("smallsearchicon");
 			if (!hook("replaceresourcetoolssmall"))
-				{ ?>
-				<!-- Preview icon -->
-				<?php 
-				if (!hook("replacefullscreenpreviewicon"))
-					{
-					if ($result[$n]["has_image"]==1)
-						{ ?>
-						<span class="IconPreview">
-						<a 
-							onClick="return CentralSpaceLoad(this,true);" 
-							href="<?php echo $baseurl_short?>pages/preview.php?from=search&amp;ref=<?php echo urlencode($ref)?>&amp;ext=<?php echo $result[$n]["preview_extension"]?>&amp;search=<?php echo urlencode($search)?>&amp;offset=<?php echo urlencode($offset)?>&amp;order_by=<?php echo urlencode($order_by)?>&amp;sort=<?php echo urlencode($sort)?>&amp;archive=<?php echo urlencode($archive)?>&amp;k=<?php echo urlencode($k)?>"  
-							title="<?php echo $lang["fullscreenpreview"]?>"
-						>
-							<img 
-								src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-								alt="<?php echo $lang["fullscreenpreview"]?>" 
-								width="22" 
-								height="12" 
-							/>
-						</a>
-						</span>
-						<?php 
-						$showkeypreview = true;
-						}
-					} /* end hook replacefullscreenpreviewicon */ ?>
-				<!-- Add to collection icon -->
-				<?php 
-				if (!checkperm("b") && $k=="") 
-					{ ?>
-					<span class="IconCollect">
-						<?php echo add_to_collection_link($ref,$search)?>
-							<img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="22" height="12" />
-						</a>
-					</span>
-					<?php 
-					$showkeycollect = true; 
-					} ?>
-				<!-- Remove from collection icon -->
-				<?php 
-				if (!checkperm("b") && substr($search,0,11)=="!collection" && $k=="") 
-					{
-					if ($search=="!collection".$usercollection)
-						{ ?>
-						<span class="IconCollectOut">
-							<?php echo remove_from_collection_link($ref,$search)?>
-								<img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="22" height="12" />
-							</a>
-						</span>
-						<?php 
-						$showkeycollectout = true; 
-						}
-					}?>
-					
-							<!-- Edit icon -->
-			<?php
-			// The permissions check here is intentionally more basic. It doesn't check edit_filter as this would be computationally intensive
-			// when displaying many resources. As such this is a convenience feature for users that have system-wide edit access to the given
-			// access level.
-			if($search_results_edit_icon && checkperm("e" . $result[$n]["archive"]) && !hook("iconedit")) 
-				{ 
-				if ($allow_share && $k=="") 
-					{ ?>
-					<span class="IconEdit">
-						<a 
-							href="<?php echo str_replace("view.php","edit.php",$url) ?>"  
-							onClick="return <?php echo ($resource_view_modal?"Modal":"CentralSpace") ?>Load(this,true);" 
-							title="<?php echo $lang["editresource"]?>"
-						>
-							<img 
-								src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-								alt="" 
-								width="16" 
-								height="12" 
-							/>
-						</a>
-					</span>
-					<?php
-					$showkeyedit = true;
-					}
-				} 	
+				{
+				include "resource_tools.php";
 				} // end hook replaceresourcetoolssmall ?>
 				
 			</div>
 			<?php hook("smallthumbicon"); ?>
 		<div class="clearer"></div>
 		</div>	
-	<div class="PanelShadow"></div>
+	
 	</div>
 	<?php 
 	} # end hook renderresultsmallthumb

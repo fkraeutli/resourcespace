@@ -6,7 +6,7 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";if (!checkperm("k")) {exit ("Permission denied.");}
 include "../../include/research_functions.php";
 include_once "../../include/collections_functions.php";
@@ -54,7 +54,7 @@ for ($n=$offset;(($n<count($keywords)) && ($n<($offset+$per_page)));$n++)
 	<tr>
 	<td><div class="ListTitle"><a href="<?php echo $baseurl_short?>pages/team/team_related_keywords_edit.php?keyword=<?php echo $keywords[$n]["keyword"]?>"><?php echo $keywords[$n]["keyword"]?></div></td>
 	<td><?php echo tidy_trim(htmlspecialchars($keywords[$n]["related"]),45)?></td>
-	<td><div class="ListTools"><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/team/team_related_keywords_edit.php?keyword=<?php echo $keywords[$n]["keyword"]?>">&gt;&nbsp;<?php echo $lang["action-edit"]?> </a></div></td>
+	<td><div class="ListTools"><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/team/team_related_keywords_edit.php?keyword=<?php echo $keywords[$n]["keyword"]?>"><?php echo LINK_CARET ?><?php echo $lang["action-edit"]?> </a></div></td>
 	</tr>
 	<?php
 	}

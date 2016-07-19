@@ -3,7 +3,7 @@
 # NOTE: requires System setup permission
 
 include '../../../include/db.php';
-include '../../../include/general.php';
+include_once '../../../include/general.php';
 include '../../../include/authenticate.php'; if (!checkperm('a')) {exit ($lang['error-permissiondenied']);}
 include '../include/track_field_history_functions.php';
 
@@ -23,7 +23,7 @@ if(empty($field_log_records)) {
 
 ?>
 <p>
-    <a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo $resource_id; ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo '&lt;&nbsp;' . $lang['backtoresourceview']; ?></a>
+    <a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo $resource_id; ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo '<?php echo LINK_CARET_BACK ?>' . $lang['backtoresourceview']; ?></a>
 </p>
 <div class="BasicsBox">
     <h1><?php echo str_replace('%fieldtitle%', $field_title, $lang['track_field_history_field_history_page_title']); ?></h1>

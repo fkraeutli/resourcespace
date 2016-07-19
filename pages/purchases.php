@@ -1,6 +1,6 @@
 <?php 
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; if (checkperm("b")){exit("Permission denied");}
 #if (!checkperm("s")) {exit ("Permission denied.");}
 include_once "../include/collections_functions.php";
@@ -8,12 +8,12 @@ include "../include/search_functions.php";
 include "../include/resource_functions.php";
 
 $offset=getvalescaped("offset",0,true);
-$find=getvalescaped("find",getvalescaped("saved_find",""));setcookie("saved_find",$find, 0, '', '', false, true);
-$col_order_by=getvalescaped("col_order_by",getvalescaped("saved_col_order_by","created"));setcookie("saved_col_order_by",$col_order_by, 0, '', '', false, true);
-$sort=getvalescaped("sort",getvalescaped("saved_col_sort","ASC"));setcookie("saved_col_sort",$sort, 0, '', '', false, true);
+$find=getvalescaped("find",getvalescaped("saved_find",""));rs_setcookie('saved_find', $find);
+$col_order_by=getvalescaped("col_order_by",getvalescaped("saved_col_order_by","created"));rs_setcookie('saved_col_order_by', $col_order_by);
+$sort=getvalescaped("sort",getvalescaped("saved_col_sort","ASC"));rs_setcookie('saved_col_sort', $sort);
 $revsort = ($sort=="ASC") ? "DESC" : "ASC";
 # pager
-$per_page=getvalescaped("per_page_list",$default_perpage_list,true);setcookie("per_page_list",$per_page, 0, '', '', false, true);
+$per_page=getvalescaped("per_page_list",$default_perpage_list,true);rs_setcookie('per_page_list', $per_page);
 
 $collection_valid_order_bys=array("fullname","name","ref","count","public");
 $modified_collection_valid_order_bys=hook("modifycollectionvalidorderbys");
@@ -155,10 +155,10 @@ for ($n=$offset;(($n<count($collections)) && ($n<($offset+$per_page)));$n++)
 <?php hook("beforecollectiontoolscolumn");?>
 	<td>	
         <div class="ListTools">
-		<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode("!collection" . $collections[$n]["ref"])?>">&gt;&nbsp;<?php echo $lang["viewall"]?></a>
+		<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode("!collection" . $collections[$n]["ref"])?>"><?php echo LINK_CARET ?><?php echo $lang["viewall"]?></a>
 	
 	<?php if ($contact_sheet==true && $manage_collections_contact_sheet_link) { ?>
-    &nbsp;<a href="<?php echo $baseurl_short?>pages/contactsheet_settings.php?ref=<?php echo $collections[$n]["ref"]?>" onClick="return CentralSpaceLoad(this);">&gt;&nbsp;<?php echo $lang["contactsheet"]?></a>
+    &nbsp;<a href="<?php echo $baseurl_short?>pages/contactsheet_settings.php?ref=<?php echo $collections[$n]["ref"]?>" onClick="return CentralSpaceLoad(this);"><?php echo LINK_CARET ?><?php echo $lang["contactsheet"]?></a>
 	<?php } ?>
 
 	<?php hook("addcustomtool"); ?>

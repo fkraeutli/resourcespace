@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php";
 $type=getvalescaped("type","Keyword usage");
 
@@ -40,7 +40,7 @@ foreach($tags as $tag=>$count)
 ?>
 </div>
 </div>
-<div class="PanelShadow"></div>
+
 </div>
 
 <?php

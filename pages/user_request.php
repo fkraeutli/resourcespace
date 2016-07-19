@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 
 
 $error=false;
@@ -64,7 +64,7 @@ if (getval("save","")!="")
 		$error=$lang["requiredfields"] . ' ' . i18n_get_translated(implode(', ', $missingFields), true);
 		}
 	# Check the anti-spam code is correct
-	elseif (getval("antispamcode","")!=md5(getval("antispam","")))
+	elseif (!hook('replaceantispam_check') && getval("antispamcode","")!=md5(getval("antispam","")))
 		{
 		$error=$lang["requiredantispam"];
 		}
@@ -99,8 +99,31 @@ if (getval("save","")!="")
 		}
 	}
 include "../include/header.php";
-?>
 
+if($login_background)
+	{
+    $backimageurl = "";
+    $dir = dirname(__FILE__) . "/../" . $homeanim_folder;
+    $d = scandir($dir);    
+	sort($d, SORT_NUMERIC);
+    foreach ($d as $f) 
+		{ 
+		if(preg_match("/[0-9]+\.(jpg)$/",$f))
+            {
+            $backimageurl= $baseurl_short . $homeanim_folder . "/" . $f;  
+            break;    
+            }
+        }
+	?>
+	<style>
+	#UICenter {
+		background-image: url('<?php echo $backimageurl; ?>');
+		}
+	</style>
+	<?php
+	}
+?>
+<div id="login_box">
 <h1><?php echo $lang["requestuserlogin"]?></h1>
 <p><?php echo text("introtext")?></p>
 
@@ -294,7 +317,8 @@ if(!hook("replace_user_request_required_key"))
 	<p><sup>*</sup> <?php echo $lang["requiredfield"] ?></p>
 	<?php
 	}
-
-include "../include/footer.php";
 ?>
+</div><!-- end of login_box -->
+<?php
+include "../include/footer.php";
 

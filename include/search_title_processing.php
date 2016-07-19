@@ -14,6 +14,12 @@ $refinements=explode(",",$search);
 if (substr($search,0,1)=="!" && substr($search,0,6)!="!empty"){$startsearchcrumbs=1;} else {$startsearchcrumbs=0;}
 if ($refinements[0]!=""){
 	for ($n=$startsearchcrumbs;$n<count($refinements);$n++){
+		# strip the first semi-colon so it's not swapped with an " OR "
+		$semi_pos = strpos($refinements[$n],":;");
+		if ($semi_pos !== false) {
+			$refinements[$n] = substr_replace($refinements[$n],": ",$semi_pos,strlen(":;"));
+		}
+		
 		$search_title_element=str_replace(";"," OR ",$refinements[$n]);
 		if ($n!=0 || $archive!=0){$searchcrumbs.=" > </count> </count> </count> ";}
 		$searchcrumbs.="<a href=\"".$baseurl_short."pages/search.php?search=";
@@ -65,7 +71,7 @@ if (isset($collectiondata["theme"]) && strlen($collectiondata["theme"])>0)
 		{
 		$colaccessmode = $lang["themes"];
 		$is_theme=true;						
-		$theme_link="<a onClick='return CentralSpaceLoad(this,true);' href='" . $baseurl . "/pages/themes.php'>".$lang['themes']."</a> &gt; <a onClick='return CentralSpaceLoad(this,true);' href='".$baseurl . "/pages/themes.php?theme1=" . urlencode($collectiondata["theme"]) . "'>" . i18n_get_translated($collectiondata["theme"]) . "</a>";
+		$theme_link="<a onClick='return CentralSpaceLoad(this,true);' href='" . $baseurl . "/pages/themes.php'>".$lang['themes']."</a> &gt; <a onClick='return CentralSpaceLoad(this,true);' href='".$baseurl . "/pages/themes.php?theme1=" . urlencode($collectiondata["theme"]) . "'>" . str_replace("*","",i18n_get_translated($collectiondata["theme"])) . "</a>";
 		global $theme_category_levels;
 		for($x=2;$x<=$theme_category_levels;$x++)
 			{					
@@ -76,7 +82,7 @@ if (isset($collectiondata["theme"]) && strlen($collectiondata["theme"])>0)
 					{
 					$theme_link_url .= "&theme" . $l . "=" . urlencode($collectiondata['theme' . $l]);
 					}
-				$theme_link .= " &gt; <a onClick='return CentralSpaceLoad(this, true);' href='" . $theme_link_url . "'>" . i18n_get_translated($collectiondata['theme' . $x]) . "</a>";
+				$theme_link .= " &gt; <a onClick='return CentralSpaceLoad(this, true);' href='" . $theme_link_url . "'>" . str_replace("*","",i18n_get_translated($collectiondata['theme' . $x])) . "</a>";
 				}
 			}			
 		}

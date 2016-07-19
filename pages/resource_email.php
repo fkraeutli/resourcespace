@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; 
 include "../include/resource_functions.php";
 include "../include/search_functions.php";
@@ -18,9 +18,9 @@ $restypes=getvalescaped("restypes","");
 if (strpos($search,"!")!==false) {$restypes="";}
 $archive=getvalescaped("archive",0,true);
 
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getvalescaped("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getvalescaped("sort",$default_sort_direction);
 
 $useraccess=get_resource_access($ref);
 
@@ -105,7 +105,7 @@ if (getval("save","")!="")
 include "../include/header.php";
 ?>
 <div class="BasicsBox">
-<p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a></p>
+<p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset)?>&order_by=<?php echo urlencode($order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a></p>
 <h1><?php echo $lang["emailresourcetitle"]?></h1>
 
 <p><?php echo text("introtext")?></p>
@@ -258,7 +258,7 @@ include "../include/user_select.php"; ?>
 </div>
 <?php } ?>
 
-<?php if($useraccess==0)
+<?php if($useraccess==0 && !hook("replaceemailopenaccess"))
 	{
 	$resourcedata=get_resource_data($ref,true);
 	if(get_edit_access($ref,$resource['archive'],false,$resource))
@@ -325,14 +325,19 @@ if(!$user_select_internal)
 	<div class="Question">
 	<label for="groupselect"><?php echo $lang["externalshare_using_permissions_from_user_group"] ?></label>
 	<select id="groupselect" name="usergroup" class="stdwidth">
-	<?php $grouplist=get_usergroups(true);
-	foreach ($grouplist as $group)
-		{
-		?>
-		<option value="<?php echo $group["ref"] ?>" <?php if ($usergroup==$group["ref"]) { ?>selected<?php } ?>><?php echo $group["name"] ?></option>
-		<?php
-		}
-	?>
+    <?php
+    $grouplist = get_usergroups(true);
+    foreach($grouplist as $group)
+        {
+        if(!empty($allowed_external_share_groups) && !in_array($group['ref'], $allowed_external_share_groups))
+            {
+            continue;
+            }
+        ?>
+        <option value="<?php echo $group["ref"] ?>" <?php if ($usergroup==$group["ref"]) { ?>selected<?php } ?>><?php echo $group["name"] ?></option>
+        <?php
+        }
+        ?>
 	</select>
 	<div class="clearerleft"> </div>
 	</div>

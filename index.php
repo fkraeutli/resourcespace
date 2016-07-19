@@ -1,7 +1,7 @@
 <?php
 include "include/db.php";
-include "include/general.php";
-include "include/collections_functions.php";
+include_once 'include/general.php';
+include_once 'include/collections_functions.php';
 
 
 
@@ -14,11 +14,15 @@ if (getval("rp","")!="")
 	}
         
 # External access support (authenticate only if no key provided, or if invalid access key provided)
-$k=getvalescaped("k","");if (($k=="") || (!check_access_key_collection(getvalescaped("c",""),$k) && !check_access_key(getvalescaped("r",""),$k))) {include "include/authenticate.php";}
+$k = getvalescaped('k', '');
+if('' == $k || (!check_access_key_collection(getvalescaped('c', ''), $k) && !check_access_key(getvalescaped('r', ''), $k)))
+    {
+    include 'include/authenticate.php';
+    }
 
 if (!hook("replacetopurl"))
 	{ 
-	$topurl="pages/" . $default_home_page;
+	$topurl="pages/" . $default_home_page . "?login=true";
 	if ($use_theme_as_home) {$topurl="pages/themes.php";}
 	if ($use_recent_as_home) {$topurl="pages/search.php?search=" . urlencode("!last".$recent_search_quantity);}
 	} /* end hook replacetopurl */ 

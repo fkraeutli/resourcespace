@@ -6,7 +6,7 @@ $results_per_page = 20;
 if ($same_page_callback)
 	{
 	include "../../include/db.php";
-	include "../../include/general.php";
+	include_once "../../include/general.php";
 	include "../../include/authenticate.php";
 	}
 
@@ -635,7 +635,7 @@ if (!$sorted && $sortby)
 								<?php
 								foreach ($actions as $title => $action)
 									{
-									?>&nbsp;<a href="#">&gt;&nbsp;<?php echo $title; ?></a><?php
+									?>&nbsp;<a href="#"><?php echo LINK_CARET ?><?php echo $title; ?></a><?php
 									}
 								?>
 							</div>

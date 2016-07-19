@@ -174,20 +174,20 @@ function render_text_option($fieldname, $value, $size=20, $units=''){
 /**
 * Save/ Update config option
 *
-* @param  integer  $user_id      Current user ID
+* @param  integer  $user_id      Current user ID. Use NULL for system wide config options
 * @param  string   $param_name   Parameter name
 * @param  string   $param_value  Parameter value
 *
 * @return boolean
 */
 function set_config_option($user_id, $param_name, $param_value)
-    {
+    {	
     // We do allow for param values to be empty strings or 0 (zero)
     if(empty($param_name) || is_null($param_value))
         {
         return false;
         }
-
+		
     // Prepare the value before inserting it
     $param_value = config_clean($param_value);
     $param_value = escape_check($param_value);
@@ -208,10 +208,9 @@ function set_config_option($user_id, $param_name, $param_value)
         $param_name,
         $param_value
     );
-
     $current_param_value = null;
     if(get_config_option($user_id, $param_name, $current_param_value))
-        {
+        {		
         if($current_param_value == $param_value)
             {
             return true;
@@ -248,9 +247,12 @@ function set_config_option($user_id, $param_name, $param_value)
 * @param  string   $name            Parameter name
 * @param  string   $returned_value  If a value does exist it will be returned through
 *                                   this parameter which is passed by reference
+* @param  mixed    $default         Optionally used to set a default that may not be the current
+*                                   global setting e.g. for checking admin resource preferences
+*
 * @return boolean
 */
-function get_config_option($user_id, $name, &$returned_value)
+function get_config_option($user_id, $name, &$returned_value, $default = null)
     {
     if(trim($name) === '')
         {
@@ -268,13 +270,18 @@ function get_config_option($user_id, $name, &$returned_value)
     );
     $config_option = sql_value($query, null);
 
-    if(is_null($config_option))
+    if(is_null($default) && isset($GLOBALS[$name]))
         {
+        $default = $GLOBALS[$name];
+        }
+
+     if(is_null($config_option))
+        {
+        $returned_value = isset($default) ? $default : null;
         return false;
         }
 
     $returned_value = unescape($config_option);
-
     return true;
     }
 
@@ -526,6 +533,73 @@ function config_file_input($name, $label, $current, $form_action, $width = 300)
     <?php
     }
 
+/**
+ * Generate colour picker input
+ *
+ * @param string $name          HTML input name attribute
+ * @param string $label
+ * @param string $current       Current value
+ * @param string $default       Default value
+ * @param string $title         Title
+ * @param boolean $autosave     Automatically save the value on change
+ * @param string on_change_js   JavaScript run onchange of value (useful for "live" previewing of changes)
+ */
+function config_colouroverride_input($name, $label, $current, $default, $title=null, $autosave=false, $on_change_js=null)
+    {
+    global $lang;
+    $checked=$current && $current!=$default;
+    if (is_null($title))
+        {
+        // This is how it was used on plugins setup page. Makes sense for developers when trying to debug and not much for non-technical users
+        $title = str_replace('%cvn', $name, $lang['plugins-configvar']);
+        }
+    ?><div class="Question" style="min-height: 1.5em;">
+        <label for="<?php echo $name; ?>" title="<?php echo $title; ?>"><?php echo $label; ?></label>
+        <div class="AutoSaveStatus">
+            <span id="AutoSaveStatus-<?php echo $name; ?>" style="display:none;"></span>
+        </div>
+        <input type="checkbox" <?php if ($checked) { ?>checked="true" <?php } ?>onchange="
+            jQuery('#container_<?php echo $name; ?>').toggle();
+            if(!this.checked)
+            {
+            jQuery('#<?php echo $name; ?>').val('<?php echo $default; ?>');
+        <?php if ($autosave)
+            {
+            ?>AutoSaveConfigOption('<?php echo $name; ?>');
+                jQuery('#<?php echo $name; ?>').trigger('change');
+            <?php
+            }
+        if(!empty($on_change_js))
+            {
+            echo $on_change_js;
+            }
+        ?>
+            }
+            " style="float: left;" />
+        <div id="container_<?php echo $name; ?>"<?php if (!$checked) { ?>style="display: none;" <?php } ?>>
+            <input id="<?php echo $name; ?>" name="<?php echo $name; ?>" type="text" value="<?php echo htmlspecialchars($current, ENT_QUOTES); ?>" onchange="<?php
+            if ($autosave)
+                {
+                ?>AutoSaveConfigOption('<?php echo $name; ?>');<?php
+                }
+            if(!empty($on_change_js))
+                {
+                echo $on_change_js;
+                }
+            ?>" default="<?php echo $default; ?>" />
+            <script>
+                jQuery('#<?php echo $name; ?>').spectrum({
+                    showAlpha: true,
+                    showInput: true,
+                    clickoutFiresChange: true,
+                    preferredFormat: 'rgb'
+                });
+            </script>
+        </div>
+        </div>
+        <div class="clearerleft"></div>
+    <?php
+    }
 
 /**
 * Return a data structure that will be used to generate the HTML for
@@ -688,6 +762,10 @@ function config_add_boolean_select($config_var, $label, $choices = '', $width = 
     return array('boolean_select', $config_var, $label, $choices, $width, $title, $autosave);
     }
 
+function config_add_colouroverride_input($config_var, $label='', $default='', $title='', $autosave=false, $on_change_js=null)
+    {
+    return array('colouroverride_input', $config_var, $label, $default, $title, $autosave, $on_change_js);
+    }
 
 /**
 * Generate Javascript function used for auto saving individual config options
@@ -742,7 +820,7 @@ function config_generate_AutoSaveConfigOption_function($post_url)
 
 function config_process_file_input(array $page_def, $file_location, $redirect_location)
     {
-    global $baseurl, $storagedir, $storageurl;
+    global $baseurl, $storagedir, $storageurl, $banned_extensions;
 
     $file_server_location = $storagedir . '/' . $file_location;
 
@@ -770,12 +848,12 @@ function config_process_file_input(array $page_def, $file_location, $redirect_lo
                 {
                 $delete_filename = str_replace('[storage_url]' . '/' . $file_location, $file_server_location, $delete_filename);
 
-                if(file_exists($delete_filename) && unlink($delete_filename))
+                if(file_exists($delete_filename))
                     {
-                    set_config_option(null, $config_name, '');
-
-                    $redirect = true;
+                    unlink($delete_filename);
                     }
+                set_config_option(null, $config_name, '');
+                $redirect = true;
                 }
             }
         // CLEAR
@@ -805,6 +883,11 @@ function config_process_file_input(array $page_def, $file_location, $redirect_lo
                 // without storing the full path in the database
                 $saved_filename          = sprintf('[storage_url]/%s/%s.%s', $file_location, $config_name, $uploaded_file_extension);
 
+                if(in_array($uploaded_file_extension, $banned_extensions))
+                    {
+                    trigger_error('You are not allowed to upload "' . $uploaded_file_extension . '" files to the system!');
+                    }
+
                 if(!move_uploaded_file($_FILES[$config_name]['tmp_name'], $uploaded_filename))
                     {
                     unset($uploaded_filename);
@@ -832,7 +915,8 @@ function config_process_file_input(array $page_def, $file_location, $redirect_lo
 */
 function config_generate_html(array $page_def)
     {
-    global $lang;
+    global $lang,$baseurl;
+    $included_colour_picker_library=false;
 
     foreach($page_def as $def)
         {
@@ -856,6 +940,17 @@ function config_generate_html(array $page_def)
 
             case 'single_select':
                 config_single_select($def[1], $def[2], $GLOBALS[$def[1]], $def[3], $def[4], $def[5], $def[6], $def[7]);
+                break;
+
+            case 'colouroverride_input':
+                if (!$included_colour_picker_library)
+                    {
+                    ?><script src="<?php echo $baseurl; ?>/lib/spectrum/spectrum.js"></script>
+                        <link rel="stylesheet" href="<?php echo $baseurl; ?>/lib/spectrum/spectrum.css" />
+                    <?php
+                    $included_colour_picker_library=true;
+                    }
+                config_colouroverride_input($def[1], $def[2], $GLOBALS[$def[1]], $def[3], $def[4], $def[5],$def[6]);
                 break;
             }
         }

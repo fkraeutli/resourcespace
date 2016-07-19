@@ -1,12 +1,14 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php";
 include "../include/search_functions.php";
 include "../include/resource_functions.php";
 include_once "../include/collections_functions.php";
 
-$ref          = getvalescaped("ref","",true);
+$ref        = getvalescaped('ref', '', true);
+$user_group = getvalescaped('usergroup', '', true);
+
 # fetch the current search (for finding simlar matches)
 $search       = getvalescaped("search", "");
 $order_by     = getvalescaped("order_by", "relevance");
@@ -15,8 +17,8 @@ $restypes     = getvalescaped("restypes", "");
 if (strpos($search,"!") !== false) { $restypes = ""; }
 $archive      = getvalescaped("archive", 0, true);
 $starsearch   = getvalescaped("starsearch", "");
-$default_sort = (substr($order_by,0,5) == "field") ? "ASC" : "DESC";
-$sort         = getval("sort", $default_sort);
+$default_sort_direction = (substr($order_by,0,5) == "field") ? "ASC" : "DESC";
+$sort         = getval("sort", $default_sort_direction);
 
 # Check if editing existing external share
 $editaccess   = getvalescaped("editaccess", "");
@@ -39,9 +41,11 @@ if (!can_share_resource($ref,$minaccess))
 $internal_share_only=checkperm("noex");
         
 # Process deletion of access keys
-if (getval("deleteaccess","") != "")
+$deleteaccess = getvalescaped('deleteaccess', '');
+if ('' != $deleteaccess)
     {
-    delete_resource_access_key($ref, getvalescaped("deleteaccess", ""));
+    delete_resource_access_key($ref, $deleteaccess);
+    resource_log($ref, LOG_CODE_SYSTEM, '', '', '', str_replace('%access_key', $deleteaccess, $lang['access_key_deleted']));
     }
 
 include "../include/header.php";
@@ -66,11 +70,10 @@ if($editing && !$editexternalurl)
     }
     ?>
 <div class="BasicsBox">
-    <p><a href="<?php echo $baseurl_short . 'pages/view.php?' . $query_string ?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a></p>
+    <p><a href="<?php echo $baseurl_short . 'pages/view.php?' . $query_string ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a></p>
 
     <h1><?php echo $page_header ?></h1>
 
-    <div class="BasicsBox"> 
         <form method="post" id="resourceshareform" action="<?php echo $baseurl_short?>pages/resource_share.php?ref=<?php echo urlencode($ref)?>">
             <input type="hidden" name="ref" id="ref" value="<?php echo htmlspecialchars($ref) ?>">
             <input type="hidden" name="generateurl" id="generateurl" value="<?php echo getval("generateurl","") ?>">
@@ -87,12 +90,12 @@ if($editing && !$editexternalurl)
                     {
                     if ($email_sharing) 
                         { ?>
-                        <li><a href="<?php echo $baseurl_short . 'pages/resource_email.php?' . $query_string ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["emailresourcetitle"]?></a></li> 
+                        <li><i class="fa fa-fw fa-envelope"></i>&nbsp;<a href="<?php echo $baseurl_short . 'pages/resource_email.php?' . $query_string ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["emailresourcetitle"]?></a></li> 
                         <?php 
                         }
                     if(!$internal_share_only && !$hide_resource_share_generate_url) 
 						{ ?>
-                        <li><a href="<?php echo $baseurl_short . 'pages/resource_share.php?' . $query_string . '&generateurl=true' ?>" onClick="return CentralSpaceLoad(this,true);" ><?php echo $lang["generateurl"]?></a></li> 
+                        <li><i class="fa fa-fw fa-link"></i>&nbsp;<a href="<?php echo $baseurl_short . 'pages/resource_share.php?' . $query_string . '&generateurl=true' ?>" onClick="return CentralSpaceLoad(this,true);" ><?php echo $lang["generateurl"]?></a></li> 
                         <?php 
                         }
 					else // Just show the internal share URL straight away as there is no generate link
@@ -173,7 +176,12 @@ if($editing && !$editexternalurl)
 								<select id="groupselect" name="usergroup" class="stdwidth">
 								<?php $grouplist = get_usergroups(true);
 								foreach ($grouplist as $group)
-									{ 
+									{
+                                    if(!empty($allowed_external_share_groups) && !in_array($group['ref'], $allowed_external_share_groups))
+                                        {
+                                        continue;
+                                        }
+
 									$selected = getval("editgroup","") == $group["ref"] || (getval("editgroup","") == "" && $usergroup == $group["ref"]);
 									?>
 									<option value="<?php echo $group["ref"] ?>" <?php if ($selected) echo "selected" ?>><?php echo $group["name"] ?></option>
@@ -204,15 +212,33 @@ if($editing && !$editexternalurl)
                         </div>
                         <?php
                         }
-                    else if (getvalescaped("editaccess","") == "")
+                    else if('' == getvalescaped('editaccess', ''))
                         {
-                        # Access has been selected. Generate a new URL.
-                        ?>
-                        <p><?php echo $lang["generateurlexternal"]?></p>
-                    
-                        <p><input class="URLDisplay" type="text" value="<?php echo $baseurl?>/?r=<?php echo urlencode($ref) ?>&k=<?php echo generate_resource_access_key($ref,$userref,$access,$expires,"URL",getvalescaped("usergroup", ""))?>">
-                        <?php
+                        // Access has been selected. Generate a new URL.
+                        $generated_access_key = '';
+
+                        if(empty($allowed_external_share_groups) || (!empty($allowed_external_share_groups) && in_array($user_group, $allowed_external_share_groups)))
+                            {
+                            $generated_access_key = generate_resource_access_key($ref, $userref, $access, $expires, 'URL', $user_group);
+                            }
+
+                        if('' != $generated_access_key)
+                            {
+                            ?>
+                            <p><?php echo $lang['generateurlexternal']; ?></p>
+                            <p>
+                                <input class="URLDisplay" type="text" value="<?php echo $baseurl?>/?r=<?php echo urlencode($ref) ?>&k=<?php echo $generated_access_key; ?>">
+                            </p>
+                            <?php
+                            }
+                        else
+                            {
+                            ?>
+                            <div class="PageInformal"><?php echo $lang['error_generating_access_key']; ?></div>
+                            <?php
+                            }
                         }
+
                     # Process editing of external share
                     if ($editexternalurl)
                         {
@@ -293,14 +319,14 @@ if($editing && !$editexternalurl)
                                 if ($collection_share)
                                     {
                                     ?>
-                                    <a onClick="return CentralSpaceLoad(this,true);" href="collection_share.php?ref=<?php echo $key["collection"] ?>">&gt;&nbsp;<?php echo $lang["viewcollection"]?></a>
+                                    <a onClick="return CentralSpaceLoad(this,true);" href="collection_share.php?ref=<?php echo $key["collection"] ?>"><?php echo LINK_CARET ?><?php echo $lang["viewcollection"]?></a>
                                     <?php
                                     }
                                 else
                                     {
                                     ?>
-                                    <a href="#" onClick="return resourceShareDeleteShare('<?php echo $key["access_key"] ?>');">&gt;&nbsp;<?php echo $lang["action-delete"]?></a>      
-                                    <a href="#" onClick="return resourceShareEditShare(<?php echo "'{$key["access_key"]}', '{$key["expires"]}', '{$key["access"]}', '{$key["usergroup"]}'" ?>);">&gt;&nbsp;<?php echo $lang["action-edit"]?></a>
+                                    <a href="#" onClick="return resourceShareDeleteShare('<?php echo $key["access_key"] ?>');"><?php echo LINK_CARET ?><?php echo $lang["action-delete"]?></a>      
+                                    <a href="#" onClick="return resourceShareEditShare(<?php echo "'{$key["access_key"]}', '{$key["expires"]}', '{$key["access"]}', '{$key["usergroup"]}'" ?>);"><?php echo LINK_CARET ?><?php echo $lang["action-edit"]?></a>
                                     <?php
                                     }
                                     ?>
@@ -380,7 +406,6 @@ if($editing && !$editexternalurl)
 				}
 		?></div> <!-- end Question -->
         </form>
-    </div>
 </div> <!-- BasicsBox -->
 
 <?php

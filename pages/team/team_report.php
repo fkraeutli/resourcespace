@@ -6,7 +6,7 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";if (getvalescaped('unsubscribe', '') == '' && !checkperm("t")) {exit ("Permission denied.");}
 include "../../include/reporting_functions.php";
 include_once '../../include/render_functions.php';
@@ -177,7 +177,7 @@ $ref=getval("ref","");
 for($n=0;$n<count($reports);$n++)
 	{
 	?>
-	<option value="<?php echo $reports[$n]['ref']; ?>"<?php if($reports[$n]['ref'] == $ref) { ?> selected="selected"<?php } ?>><?php echo $reports[$n]['name']; ?></option>
+	<option value="<?php echo $reports[$n]['ref']; ?>"<?php if($reports[$n]['ref'] == $report) { ?> selected="selected"<?php } ?>><?php echo $reports[$n]['name']; ?></option>
 	<?php
 	}
 	?>

@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php";
 include_once "../include/collections_functions.php";
 
@@ -11,7 +11,7 @@ $ref=getvalescaped("ref","",true);
 if (!collection_readable($ref)) {exit($lang["no_access_to_collection"]);}
 
 # pager
-$per_page=getvalescaped("per_page_list_log",15);setcookie("per_page_list_log",$per_page, 0, '', '', false, true);
+$per_page=getvalescaped("per_page_list_log",15);rs_setcookie('per_page_list_log', $per_page);
 
 include "../include/header.php";
 $log=get_collection_log($ref, $offset+$per_page);

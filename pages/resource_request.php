@@ -1,7 +1,17 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
+
 $k=getvalescaped("k","");if (($k=="") || (!check_access_key(getvalescaped("ref",""),$k))) {include_once "../include/authenticate.php";}
+
+if (!checkperm('q')){exit($lang["error-permissiondenied"]);}
+
+if ($k!="" && (!isset($internal_share_access) || !$internal_share_access) && $prevent_external_requests)
+	{
+	echo "<script>window.location = '" .  $baseurl . "/login.php?error="  . (($allow_account_request)?"signin_required_request_account":"signin_required") . "'</script>";
+	exit();
+	}
+
 include "../include/request_functions.php";
 include "../include/resource_functions.php";
 include_once "../include/collections_functions.php";
@@ -74,7 +84,7 @@ include "../include/header.php";
 
 <div class="BasicsBox">
 	<p>
-		<a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo urlencode($ref); ?>&k=<?php echo urlencode($k); ?>" onClick="return CentralSpaceLoad(this, true);">&lt;&nbsp;<?php echo $lang['backtoresourceview']; ?></a>
+		<a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo urlencode($ref); ?>&k=<?php echo urlencode($k); ?>" onClick="return CentralSpaceLoad(this, true);"><?php echo LINK_CARET_BACK ?><?php echo $lang['backtoresourceview']; ?></a>
 	</p>
 
   <h1><?php echo $lang["requestresource"]?></h1>

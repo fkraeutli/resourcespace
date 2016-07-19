@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once '../include/general.php';
 include "../include/authenticate.php";
 include "../include/resource_functions.php";
 include_once "../include/collections_functions.php";
@@ -34,7 +34,7 @@ function loadWelcomeText()
 		}
 	}
 
-if (!hook("replaceslideshow")) 
+if (!hook("replaceslideshow"))
 	{
 	global $slideshow_photo_delay;
 
@@ -44,16 +44,20 @@ if (!hook("replaceslideshow"))
 	$checksum=0; # Work out a checksum which is the total of all the image files in bytes - used in image URLs to force a refresh if any of the images change.
 	$d = scandir($dir); 
 	sort($d, SORT_NUMERIC);
-	$reslinks=array();
+	$reslinks=array();	
+	$login_image_skipped=false;
 	foreach ($d as $f) 
 		{ 
 		if(preg_match("/[0-9]+\.(jpg)$/",$f))
 		 	{ 
-		 	$filecount++;
+		 	if($login_background && $filecount==0 && !$login_image_skipped){$login_image_skipped=true;continue;}
+			$filecount++;
 
 			$checksum+=filemtime($dir . "/" . $f);
 			$linkfile=substr($f,0,(strlen($f)-4)) . ".txt";
 			$reslinks[$filecount]="";
+			
+			$imagelink[$filecount]= $baseurl_short . $homeanim_folder . "/" . $f;
 			$linkref="";
 				
 			if(file_exists("../" . $homeanim_folder . "/" . $linkfile))
@@ -63,7 +67,7 @@ if (!hook("replaceslideshow"))
 				if (($linkaccess!=="") && (($linkaccess==0) || ($linkaccess==1))){$reslinks[$filecount]=$baseurl . "/pages/view.php?ref=" . $linkref;}
 				}
 		       
-		       if ($slideshow_big)
+		       if ($slideshow_big && !$static_slideshow_image)
 				  {
 				  # Register with the new large slideshow.
 				  # Include the checksum calculated so far, to ensure a reloaded image if the image on disk has changed.
@@ -77,6 +81,19 @@ if (!hook("replaceslideshow"))
 			}
 	 	} 
 
+	if($static_slideshow_image && $filecount > 0 && $slideshow_big)
+		{
+		$randomimage=rand(1,$filecount);
+		// We only want to use one of the available images	
+		# Register this image with the large slideshow.
+		?>
+		<script type="text/javascript">
+		var big_slideshow_timer = 0;
+		RegisterSlideshowImage('<?php echo $imagelink[$randomimage] ?>', undefined, true);
+		</script>
+		 <?php
+		}
+		
 	$homeimages=$filecount;
 	if ($filecount>1 && !$slideshow_big) 
 		{ # Only add Javascript if more than one image.
@@ -206,7 +223,7 @@ if (!hook("replaceslideshow"))
 			?>">
 			</div>
 			</a>
-			<div class="PanelShadow"></div>
+			
 			<?php
 			hook("homebeforehomepicpanelend");
 			?>
@@ -271,10 +288,10 @@ if (!hook("replaceslideshow"))
 						<?php
 						} ?>
 					</select>
-					<a id="themeviewall" onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/themes.php">&gt;&nbsp;<?php echo $lang["viewall"] ?></a>
+					<a id="themeviewall" onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/themes.php"><?php echo LINK_CARET ?><?php echo $lang["viewall"] ?></a>
 				</p>
 				</div>
-				<div class="PanelShadow"></div>
+				
 			</div>
 			<?php
 			}		
@@ -303,7 +320,7 @@ if (!hook("replaceslideshow"))
 					<h2 style="padding: 0px 15px 0 44px;margin-top: 26px;margin-left: 15px;"><?php echo $lang["themes"]?></h2>
 					<span style="margin:15px;display:block;"><?php echo text("themes")?></span>
 				</div>
-				<div class="PanelShadow"></div>
+				
 			</a>
 			<?php 
 			}
@@ -333,7 +350,7 @@ if (!hook("replaceslideshow"))
 			<h2><?php echo $lang["mycollections"]?></h2>
 			<span><?php echo text("mycollections")?></span>
 			</div>
-			<div class="PanelShadow"></div>
+			
 			</a>
 			<?php 
 			}
@@ -364,7 +381,7 @@ if (!hook("replaceslideshow"))
 			<h2><?php echo $lang["advancedsearch"]?></h2>
 			<span><?php echo text("advancedsearch")?></span>
 			</div>
-			<div class="PanelShadow"></div>
+			
 			</a>
 			<?php 
 			}
@@ -394,7 +411,7 @@ if (!hook("replaceslideshow"))
 			<h2><?php echo $lang["mycontributions"]?></h2>
 			<span><?php echo text("mycontributions")?></span>
 			</div>
-			<div class="PanelShadow"></div>
+			
 			</a>
 			<?php 
 			}
@@ -420,11 +437,11 @@ if (!hook("replaceslideshow"))
 			}
 		else
 			{ ?>
-			<a href="<?php echo $baseurl_short?>pages/help.php" onClick="return CentralSpaceLoad(this,true);" class="HomePanel"><div class="HomePanelIN HomePanelHelp<?php if (count($home_collections)>0) { ?> HomePanelMatchPromotedHeight<?php } ?>">
+			<a href="<?php echo $baseurl_short?>pages/help.php" onClick="return <?php if (!$help_modal) { ?>CentralSpaceLoad(this,true);<?php } else { ?>ModalLoad(this,true);<?php } ?>" class="HomePanel"><div class="HomePanelIN HomePanelHelp<?php if (count($home_collections)>0) { ?> HomePanelMatchPromotedHeight<?php } ?>">
 			<h2><?php echo $lang["helpandadvice"]?></h2>
 			<span><?php echo text("help")?></span>
 			</div>
-			<div class="PanelShadow"></div>
+			
 			</a>
 			<?php 
 			}
@@ -470,7 +487,7 @@ if (!hook("replaceslideshow"))
 					<h2> <?php echo i18n_get_translated($custom_home_panels[$n]["title"]) ?></h2>
 					<span><?php echo i18n_get_translated($custom_home_panels[$n]["text"]) ?></span>
 					</div> 
-					<div class="PanelShadow"></div>
+					
 					</a>
 					<?php
 					} // end hook 'panelperm'
@@ -586,7 +603,7 @@ if (!hook("replaceslideshow"))
 								<?php
 								} ?>
 					</div>
-				<div class="PanelShadow"></div>
+				
 				</a>
 				<?php
 				}
@@ -610,6 +627,20 @@ if (!hook("replaceslideshow"))
 	if($small_slideshow && !$home_dash && !$welcometext){loadWelcomeText();}
 
 } // End of ReplaceHome hook
+
+
+// Launch KB modal if just logged in?
+if (in_array($usergroup,$launch_kb_on_login_for_groups) && getval("login","")!="")
+	{
+	?>
+	<script>
+	window.setTimeout("ModalLoad('<?php echo $baseurl ?>/pages/help.php?initial=true',true);",2000);
+	</script>
+	<?php
+	}
+
+
+
 
 include "../include/footer.php";
 ?>

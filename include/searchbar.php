@@ -15,6 +15,13 @@ else
 	}
 
 include_once("search_functions.php");
+include_once("render_functions.php");
+
+if(!isset($internal_share_access))
+	{
+	// Set a flag for logged in users if $external_share_view_as_internal is set and logged on user is accessing an external share
+	$internal_share_access = (isset($k) && $k!="" && $external_share_view_as_internal && isset($is_authenticated) && $is_authenticated);
+	}
 
 # Load the basic search fields, so we know which to strip from the search string
 $fields=get_simple_search_fields();
@@ -45,14 +52,14 @@ if (substr($quicksearch,0,1)=="\"" && substr($quicksearch,-1,1)=="\"") {$quoted_
 
 $quicksearch=refine_searchstring($quicksearch);
 $keywords=split_keywords($quicksearch);
-
 $set_fields=array();
 $simple=array();
+
 for ($n=0;$n<count($keywords);$n++)
 	{
 	if (trim($keywords[$n])!="")
 		{
-		if (strpos($keywords[$n],":")!==false)
+		if (strpos($keywords[$n],":")!==false && substr($keywords[$n],0,11)!="!properties")
 			{
 			$s=explode(":",$keywords[$n]);
 			if (isset($set_fields[$s[0]])){$set_fields[$s[0]].=" ".$s[1];}
@@ -111,11 +118,16 @@ if ($display_user_rating_stars && $star_search){ ?>
 	<?php } // end hook replacesearchbarstarjs ?>
 <?php } ?>
 
-<div id="SearchBox">
+<div id="SearchBox" <?php
+    if(isset($slimheader) && $slimheader && isset($slimheader_fixed_position) && $slimheader_fixed_position)
+        {
+        ?> class="SlimHeaderFixedPosition"<?php
+        }
+?>>
 
 <?php hook("searchbarbeforeboxpanel"); ?>
 
-<?php if (checkperm("s") && (!isset($k) || $k=="")) { ?>
+<?php if (checkperm("s") && (!isset($k) || $k=="" || $internal_share_access)) { ?>
 <div id="SearchBoxPanel">
 
 <?php hook("searchbartoptoolbar"); ?>
@@ -128,7 +140,7 @@ if ($display_user_rating_stars && $star_search){ ?>
 
 	<label for="ssearchbox"><?php echo text("searchpanel")?></label>
 	
-	<form id="form1" method="post" action="<?php echo $baseurl?>/pages/search.php" onSubmit="return CentralSpacePost(this,true);">
+	<form id="simple_search_form" method="post" action="<?php echo $baseurl?>/pages/search.php" onSubmit="return CentralSpacePost(this,true);">
 	<?php if (!hook("replacesearchbox")){ ?>
 		<div class="ui-widget">
         <input id="ssearchbox" <?php if ($hide_main_simple_search){?>type="hidden"<?php } ?> name="search" type="text" class="SearchWidth" value="<?php echo htmlspecialchars(stripslashes(@$quicksearch))?>">
@@ -164,7 +176,7 @@ if (!$basic_simple_search)
 		var checkcount=0;
 		// set tickall to false, then check if it should be set to true.
 		jQuery('#rttickallres').attr('checked',false);
-		var tickboxes=jQuery('#form1 .tickbox');
+		var tickboxes=jQuery('#simple_search_form .tickbox');
 			jQuery(tickboxes).each(function (elem) {
                 if( tickboxes[elem].checked){checkcount=checkcount+1;}
             });
@@ -174,14 +186,14 @@ if (!$basic_simple_search)
 		var checkcount=0;
 		// set tickall to false, then check if it should be set to true.
 		jQuery('#rttickallcoll').attr('checked',false);
-		var tickboxes=jQuery('#form1 .tickboxcoll');
+		var tickboxes=jQuery('#simple_search_form .tickboxcoll');
 			jQuery(tickboxes).each(function (elem) {
 				if( tickboxes[elem].checked){checkcount=checkcount+1;}
 			});
 		if (checkcount==tickboxes.length){jQuery('#rttickallcoll').attr('checked',true);}	
 	}
 	</script>
-	<div class="tick"><input type='checkbox' id='rttickallres' name='rttickallres' checked onclick='jQuery("#form1 .tickbox").each (function(index,Element) {jQuery(Element).attr("checked",(jQuery("#rttickallres").attr("checked")=="checked"));}); HideInapplicableSimpleSearchFields(true); '/>&nbsp;<?php echo $lang['allresourcessearchbar']?></div>
+	<div class="tick"><input type='checkbox' id='rttickallres' name='rttickallres' checked onclick='jQuery("#simple_search_form .tickbox").each (function(index,Element) {jQuery(Element).attr("checked",(jQuery("#rttickallres").attr("checked")=="checked"));}); HideInapplicableSimpleSearchFields(true); '/>&nbsp;<?php echo $lang['allresourcessearchbar']?></div>
 	<?php }?>
 	<?php
 	$rt=explode(",",@$restypes);
@@ -196,57 +208,86 @@ if (!$basic_simple_search)
 		}
 		?><div class="spacer"></div>
 		<?php if ($searchbar_selectall && ($search_includes_user_collections || $search_includes_public_collections || $search_includes_themes)) { ?>
-		<div class="tick"><input type='checkbox' id='rttickallcoll' name='rttickallcoll' checked onclick='jQuery("#form1 .tickboxcoll").each (function(index,Element) {jQuery(Element).attr("checked",(jQuery("#rttickallcoll").attr("checked")=="checked"));}); HideInapplicableSimpleSearchFields(true); '/>&nbsp;<?php echo $lang['allcollectionssearchbar']?></div>
+		<div class="tick"><input type='checkbox' id='rttickallcoll' name='rttickallcoll' checked onclick='jQuery("#simple_search_form .tickboxcoll").each (function(index,Element) {jQuery(Element).attr("checked",(jQuery("#rttickallcoll").attr("checked")=="checked"));}); HideInapplicableSimpleSearchFields(true); '/>&nbsp;<?php echo $lang['allcollectionssearchbar']?></div>
 		<?php }?>
 		<?php if ($clear_button_unchecks_collections){$colcheck="false";}else {$colcheck="true";}
 		if ($search_includes_user_collections) 
 		    { ?>
-		    <div class="tick"><?php if ($searchbar_selectall){ ?>&nbsp;&nbsp;<?php } ?><input class="tickboxcoll" id="TickBoxMyCol" type="checkbox" name="resourcemycol" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("mycol",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxMyCol">&nbsp;<?php echo $lang["mycollections"]?></label></div><?php	
+		    <div class="tick <?php if ($searchbar_selectall){ ?> tickindent <?php } ?>"><input class="tickboxcoll" id="TickBoxMyCol" type="checkbox" name="resourcemycol" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("mycol",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxMyCol">&nbsp;<?php echo $lang["mycollections"]?></label></div><?php	
 		    $clear_function.="document.getElementById('TickBoxMyCol').checked=".$colcheck.";";
 		    if ($searchbar_selectall) {$clear_function.="resetTickAllColl();";}
 		    }
 	    if ($search_includes_public_collections) 
 	        { ?>
-	        <div class="tick"><?php if ($searchbar_selectall){ ?>&nbsp;&nbsp;<?php } ?><input class="tickboxcoll" id="TickBoxPubCol" type="checkbox" name="resourcepubcol" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("pubcol",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxPubCol">&nbsp;<?php echo $lang["findpubliccollection"]?></label></div><?php	
+	        <div class="tick <?php if ($searchbar_selectall){ ?> tickindent <?php } ?>"><input class="tickboxcoll" id="TickBoxPubCol" type="checkbox" name="resourcepubcol" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("pubcol",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxPubCol">&nbsp;<?php echo $lang["findpubliccollection"]?></label></div><?php	
 	        $clear_function.="document.getElementById('TickBoxPubCol').checked=".$colcheck.";";
 	        if ($searchbar_selectall) {$clear_function.="resetTickAllColl();";}
 	        }
 	    if ($search_includes_themes) 
 	        { ?>
-	        <div class="tick"><?php if ($searchbar_selectall){ ?>&nbsp;&nbsp;<?php } ?><input class="tickboxcoll" id="TickBoxThemes" type="checkbox" name="resourcethemes" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("themes",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxThemes">&nbsp;<?php echo $lang["findcollectionthemes"]?></label></div><?php	
+	        <div class="tick <?php if ($searchbar_selectall){ ?> tickindent <?php } ?>"><input class="tickboxcoll" id="TickBoxThemes" type="checkbox" name="resourcethemes" value="yes" <?php if (((count($rt)==1) && ($rt[0]=="")) || (in_array("themes",$rt))) {?>checked="checked"<?php } ?> onClick="HideInapplicableSimpleSearchFields(true);<?php if ($searchbar_selectall){?>resetTickAllColl();<?php } ?>"/><label for="TickBoxThemes">&nbsp;<?php echo $lang["findcollectionthemes"]?></label></div><?php	
 	        $clear_function.="document.getElementById('TickBoxThemes').checked=".$colcheck.";";
 	        if ($searchbar_selectall) {$clear_function.="resetTickAllColl();";}
 	        }
 	   
 
 	}
-	?>	
-	<?php if ($searchbar_selectall){?><script type="text/javascript">resetTickAll();resetTickAllColl();</script><?php }?>
-	<?php if (!$basic_simple_search) {?>
-	</div>
-	<?php }
-	
-	hook("searchfiltertop");
-	?>
 
-	<?php $searchbuttons="<div class=\"SearchItem\" id=\"simplesearchbuttons\">";
+    if($searchbar_selectall)
+        {
+        ?>
+        <script type="text/javascript">resetTickAll();resetTickAllColl();</script>
+        <?php
+        }
+
+    if(!$basic_simple_search)
+        {
+        ?>
+        </div>
+        <?php
+        hook('after_simple_search_resource_types');
+        }
+
+	hook("searchfiltertop");
+
+    $searchbuttons="<div class=\"SearchItem\" id=\"simplesearchbuttons\">";
 	
 	$cleardate="";
 	if ($simple_search_date){$cleardate.=" document.getElementById('basicyear').value='';document.getElementById('basicmonth').value='';" ;}
         if ($searchbyday && $simple_search_date) { $cleardate.="document.getElementById('basicday').value='';"; }
 
-	if (!$basic_simple_search) { $searchbuttons.="<input name=\"Clear\" id=\"clearbutton\" class=\"searchbutton\" type=\"button\" value=\"&nbsp;&nbsp;".$lang['clearbutton']."&nbsp;&nbsp;\" onClick=\"document.getElementById('ssearchbox').value='';$cleardate";
-	if ($display_user_rating_stars && $star_search) { $searchbuttons.="StarSearchRatingDisplay(0,'StarCurrent');document.getElementById('starsearch').value='';window['StarSearchRatingDone']=true;"; } 
-	if ($resourceid_simple_search) {$searchbuttons.=" document.getElementById('searchresourceid').value='';"; }
-	$searchbuttons.="ResetTicks();\"/>"; }
+	if(!$basic_simple_search)
+        {
+        $searchbuttons .= "<input name=\"Clear\" id=\"clearbutton\" class=\"searchbutton\" type=\"button\" value=\"&nbsp;&nbsp;".$lang['clearbutton']."&nbsp;&nbsp;\" onClick=\"document.getElementById('ssearchbox').value='';$cleardate";
+        if($display_user_rating_stars && $star_search)
+            {
+            $searchbuttons .= "StarSearchRatingDisplay(0,'StarCurrent');document.getElementById('starsearch').value='';window['StarSearchRatingDone']=true;";
+            }
+
+        if($resourceid_simple_search)
+            {
+            $searchbuttons .= " document.getElementById('searchresourceid').value='';";
+            }
+
+        $searchbuttons .= "ResetTicks();\"/>";
+        }
+    else
+        {
+        $searchbuttons .= '<input name="Clear" id="clearbutton" class="searchbutton" type="button" value="&nbsp;&nbsp;' . $lang['clearbutton'] . '&nbsp;&nbsp;" onClick="document.getElementById(\'ssearchbox\').value=\'\';" />';
+        }
+
 	$searchbuttons.="<input name=\"Submit\" id=\"searchbutton\" class=\"searchbutton\" type=\"submit\" value=\"&nbsp;&nbsp;". $lang['searchbutton']."&nbsp;&nbsp;\" />";
 	hook("responsivesimplesearch");
 	$searchbuttons.="</div>";
 	if (!$searchbar_buttons_at_bottom){ echo $searchbuttons."<br/>"; }
 	if (!$basic_simple_search) {
 	// Include simple search items (if any)
+	global $clear_function;
+	
 	$optionfields=array();
 	$rendered_names=array();
+	$has_value=array();
+	//global $fields;
 	for ($n=0;$n<count($fields);$n++)
 		{
 		$render=true;
@@ -255,171 +296,38 @@ if (!$basic_simple_search)
 			{
 			$rendered_names[]=$fields[$n]["name"];
 			
-		hook("modifysearchfieldtitle");?>
-		<div class="SearchItem" id="simplesearch_<?php echo $fields[$n]["ref"] ?>" <?php if (strlen($fields[$n]["tooltip_text"])>=1){echo "title=\"" . htmlspecialchars(lang_or_i18n_get_translated($fields[$n]["tooltip_text"], "fieldtooltip-")) . "\"";}?>><?php echo htmlspecialchars($fields[$n]["title"]) ?><br />
-		<?php
-		
-		# Fetch current value
-		$value="";
-		if (isset($set_fields[$fields[$n]["name"]])) {$value=$set_fields[$fields[$n]["name"]];}
-		
-	#hook to modify field type in special case. Returning zero (to get a standard text box) doesn't work, so return 1 for type 0, 2 for type 1, etc.
-	if(hook("modifyfieldtype")){$fields[$n]["type"]=hook("modifyfieldtype")-1;}
+			# Fetch current value
+			$value="";
+			if (isset($set_fields[$fields[$n]["name"]])) {$value=$set_fields[$fields[$n]["name"]];}
+			$fields[$n]['value']=$value;
+			if($value!=='')
+				{
+				$has_value[]=$fields[$n]['ref'];
+				}
+			render_search_field($fields[$n],$value,false,"SearchWidth",true);
 
-		switch (TRUE)
-			{
-			case ($fields[$n]["type"]==0): # -------- Text boxes?><?php
-			case ($fields[$n]["type"]==1):
-			case ($fields[$n]["type"]==5):
-			case ($fields[$n]["type"]==9 && !$simple_search_show_dynamic_as_dropdown):
-			?>
-			<input class="SearchWidth" type=text name="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" value="<?php echo htmlspecialchars($value)?>"><?php
-			if ($autocomplete_search) { 
-				# Auto-complete search functionality
-				?></div>
-				<script type="text/javascript">
-				
-				jQuery(document).ready(function () { 
-				
-					jQuery("#field_<?php echo htmlspecialchars($fields[$n]["name"])?>").autocomplete( { source: "<?php echo $baseurl?>/pages/ajax/autocomplete_search.php?field=<?php echo htmlspecialchars($fields[$n]["name"]) ?>&fieldref=<?php echo $fields[$n]["ref"]?>"} );
-					})
-				
-				</script>
-				<div class="SearchItem">
-			<?php } 
-			# Add to the clear function so clicking 'clear' clears this box.
-			$clear_function.="document.getElementById('field_" . $fields[$n]["name"] . "').value='';";
-			
-			break;
-		
-			case ($fields[$n]["type"]==2):
-			case ($fields[$n]["type"]==3):
-			case ($fields[$n]["type"]==9 && $simple_search_show_dynamic_as_dropdown):
-			// Dropdown and checkbox types - display a dropdown for both - also for dynamic dropdowns when configured
-			$options=get_field_options($fields[$n]["ref"]);
-			$adjusted_dropdownoptions=hook("adjustdropdownoptions");
-			if ($adjusted_dropdownoptions){$options=$adjusted_dropdownoptions;}
-			
-			$optionfields[]=$fields[$n]["name"]; # Append to the option fields array, used by the AJAX dropdown filtering
-			?>
-			<select id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" name="field_drop_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" class="SearchWidth" onChange="FilterBasicSearchOptions('<?php echo htmlspecialchars($fields[$n]["name"]) ?>',<?php echo htmlspecialchars($fields[$n]["resource_type"]) ?>);">
-			  <option selected="selected" value="">&nbsp;</option>
-			  <?php
-			  for ($m=0;$m<count($options);$m++)
-				{
-				$c=i18n_get_translated($options[$m]);
-				if ($c!="")
-					{
-					if (!hook('modifysearchfieldvalues')) 
-						{
-						?><option <?php if (cleanse_string($c,false)==$value) { ?>selected<?php } ?>><?php echo htmlspecialchars($c) ?></option><?php
-                        }
-                    }
-				}
-			  ?>
-	  		</select>
-			<?php
-
-			# Add to the clear function so clicking 'clear' clears this box.
-			$clear_function.="document.getElementById('field_" . $fields[$n]["name"] . "').selectedIndex=0;";
-			break;
-			
-			case ($fields[$n]["type"]==4):
-			case ($fields[$n]["type"]==10):
-			case ($fields[$n]["type"]==6):
-			// Date types
-			$d_year='';$d_month='';$d_day='';
-			$s=explode("|",$value);
-	
-			if (count($s)>=1) {$d_year=$s[0];}
-			if (count($s)>=2) {$d_month=$s[1];}
-			if (count($s)>=3) {$d_day=$s[2];}
-			?>
-			<select id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_year" class="SearchWidth" name="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_year">
-			  <option selected="selected" value=""><?php echo $lang["anyyear"]?></option>
-			  <?php
-			  $y=date("Y");
-			  for ($d=$y;$d>=$minyear;$d--)
-				{
-				?><option <?php if ($d==$d_year) { ?>selected<?php } ?>><?php echo $d?></option><?php
-				}
-			  ?>
-			</select>
-			<?php if ($searchbyday) { ?><br /><?php } ?>	
-			<select id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_month" name="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_month" class="SearchWidth">
-			  <option selected="selected" value=""><?php echo $lang["anymonth"]?></option>
-			  <?php
-			  for ($d=1;$d<=12;$d++)
-				{
-				$m=str_pad($d,2,"0",STR_PAD_LEFT);
-				?><option <?php if ($d==$d_month) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $lang["months"][$d-1]?></option><?php
-				}
-			  ?>		
-			</select>
-		    <?php if ($searchbyday) { ?>
-			<select id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_day" name="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>_day" class="SearchWidth">
-			  <option selected="selected" value=""><?php echo $lang["anyday"]?></option>
-			  <?php
-			  for ($d=1;$d<=31;$d++)
-				{
-				$m=str_pad($d,2,"0",STR_PAD_LEFT);
-				?><option <?php if ($d==$d_day) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $m?></option><?php
-				}
-			  ?>
-			</select>
-			<?php } ?>
-			<?php
-			# Add to the clear function so clicking 'clear' clears this box.
-			$clear_function.="
-				document.getElementById('field_" . $fields[$n]["name"] . "_year').selectedIndex=0;
-				document.getElementById('field_" . $fields[$n]["name"] . "_month').selectedIndex=0;
-				document.getElementById('field_" . $fields[$n]["name"] . "_day').selectedIndex=0;
-				";
-			break;
-			case ($fields[$n]["type"]==7):
-			 
-			
-			
-			
-			#-------------------- Category Tree (launches popup window)
-			
-			# Show a smaller version of the selected node box, plus the hidden value that submits the form.
-			
-			# Reprocess provided value into expected format.
-			$value=str_replace(";",",",$value);
-			?>
-			
-			<div id="field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" >
-			<div id="<?php echo htmlspecialchars($fields[$n]["name"]) ?>_statusbox" class="MiniCategoryBox"></div>
-			<input type="hidden" name="field_cat_<?php echo htmlspecialchars($fields[$n]["name"]) ?>" id="<?php echo htmlspecialchars($fields[$n]["name"]) ?>_category" value="<?php echo htmlspecialchars($value) ?>">
-			
-			
-			<?php
-			# Add floating frame HTML. This must go in the footer otherwise it appears in the wrong place in IE due to it existing within a floated parent (the search bar).
-			@$extrafooterhtml.="
-			<div class=\"RecordPanel\" style=\"display:none;position:fixed;top:100px;left:200px;text-align:left;\" id=\"cattree_" . $fields[$n]["name"] . "\">" . $lang["pleasewait"] . "</div>
-			<script type=\"text/javascript\">
-			// Load Category Tree
-			jQuery(document).ready(function () {
-				jQuery('#cattree_" . $fields[$n]["name"] . "').load('" . $baseurl_short . "pages/ajax/category_tree_popup.php?field=" . $fields[$n]["ref"] . "&value=" . urlencode($value) . "&nc=" . time() . "');
-				})
-			</script>
-			";
-			
-			echo "<a href=\"#\" onClick=\"jQuery('#cattree_" . $fields[$n]["name"] . "').css('top', (jQuery(this).position().top)-200);jQuery('#cattree_" . $fields[$n]["name"] . "').css('left', (jQuery(this).position().left)-400);jQuery('#cattree_" . $fields[$n]["name"] . "').css('position', 'fixed');jQuery('#cattree_" . $fields[$n]["name"] . "').show();jQuery('#cattree_" . $fields[$n]["name"] . "').draggable();return false;\">" . $lang["select"] . "</a></div>";
-
-			# Add to clear function
-			$clear_function.="DeselectAll('" . $fields[$n]["name"] ."', true);";
-			
-			break;			
-			
-			
 			}
+		}
+	
+	if(!empty($has_value))
+		{
 		?>
-		</div>	
+		<script>
+			jQuery(document).ready(function(){
+				<?php
+				// we need to trigger a change event
+				foreach($has_value as $trigger_field)
+					{
+					?>
+					jQuery("#field_<?php echo $trigger_field?>").trigger('change');
+					<?php
+				}
+				?>
+			});
+		</script>
 		<?php
 		}
-		}
+	
 	?>
 	<script type="text/javascript">
 	function FilterBasicSearchOptions(clickedfield,resourcetype)
@@ -482,23 +390,88 @@ if (!$basic_simple_search)
 			{
 			# Check it's not a global field, we don't need to hide those
 			# Also check it's not a duplicate field as those should not be toggled.
-			if ($fields[$n]["resource_type"]!=0 && !in_array($fields[$n]["name"],$duplicate_fields))
+			if ($fields[$n]["resource_type"]!=0 && !in_array($fields[$n]["name"],$duplicate_fields) && (empty($simple_search_display_condition) || (!empty($simple_search_display_condition) && !in_array($fields[$n]['ref'],$simple_search_display_condition))))
 				{
 				?>
 				if (reset)
 					{
 					// When clicking checkboxes, always reset any resource type specific fields.
-					document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>').value='';
+					<?php
+					switch($fields[$n]['type'])
+						{
+						case '7':
+							?>
+							document.getElementById('<?php echo htmlspecialchars($fields[$n]["name"]) ?>_category').value='';
+							document.getElementById('<?php echo htmlspecialchars($fields[$n]["name"]) ?>_statusbox').innerHTML='<?php echo $lang["nocategoriesselected"]?>';
+							<?php
+							break;
+						case '4':
+						case '6':
+						case '10':
+							?>
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_year').value='';
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_month').value='';
+							<?php
+							if($searchbyday)
+								{
+								?>
+								document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_day').value='';
+								<?php
+								}
+							break;
+						default:
+							?>
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>').value='';
+							<?php
+						}
+					?>
 					}
 					
-				if (!document.getElementById('TickBox<?php echo $fields[$n]["resource_type"] ?>').checked)
+				if (document.getElementById('TickBox<?php echo $fields[$n]["resource_type"] ?>') !== null && !document.getElementById('TickBox<?php echo $fields[$n]["resource_type"] ?>').checked)
 					{
 					document.getElementById('simplesearch_<?php echo $fields[$n]["ref"] ?>').style.display='none';
 					// Also deselect it.
-					document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>').value='';
+					<?php
+					switch($fields[$n]['type'])
+						{
+						case '4':
+						case '6':
+						case '10':
+							?>
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_year').value='';
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_month').value='';
+							<?php
+							if($searchbyday)
+								{
+								?>
+								document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>_day').value='';
+								<?php
+								}
+							break;
+						case '7':
+							?>
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["name"]) ?>').value='';
+							<?php
+							break;
+						default:
+							?>
+							document.getElementById('field_<?php echo htmlspecialchars($fields[$n]["ref"]) ?>').value='';
+							<?php
+						}
+					?>
 					}
 				else
-					{document.getElementById('simplesearch_<?php echo $fields[$n]["ref"] ?>').style.display='';}
+					{
+					<?php
+					if(in_array($fields[$n]['type'],array(2,3)) || ($fields[$n]["type"]==9 && $simple_search_show_dynamic_as_dropdown))
+						{
+						?>
+						document.getElementById('field_<?php echo $fields[$n]["ref"] ?>').disabled=false;
+						<?php
+						}
+					?>
+					document.getElementById('simplesearch_<?php echo $fields[$n]["ref"] ?>').style.display='';
+					}
 				<?php
 				}
 			}
@@ -625,8 +598,8 @@ if (!$basic_simple_search)
   </form>
   <br />
   <?php hook("searchbarbeforebottomlinks"); ?>
-  <?php if (! $disable_geocoding) { ?><p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl?>/pages/geo_search.php">&gt; <?php echo $lang["geographicsearch"]?></a></p><?php } ?>
-  <?php if (! $advancedsearch_disabled && !hook("advancedsearchlink")) { ?><p><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl?>/pages/search_advanced.php">&gt; <?php echo $lang["gotoadvancedsearch"]?></a></p><?php } ?>
+  <?php if (! $disable_geocoding) { ?><p><i class="fa fa-fw fa-globe"></i>&nbsp;<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl?>/pages/geo_search.php"><?php echo $lang["geographicsearch"]?></a></p><?php } ?>
+  <?php if (! $advancedsearch_disabled && !hook("advancedsearchlink")) { ?><p><i class="fa fa-fw fa-search-plus"></i>&nbsp;<a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl?>/pages/search_advanced.php"><?php echo $lang["gotoadvancedsearch"]?></a></p><?php } ?>
 
   <?php hook("searchbarafterbuttons"); ?>
 
@@ -635,7 +608,7 @@ if (!$basic_simple_search)
 	<?php } ?> <!-- END of Searchbarreplace hook -->
 	</div>
 	</div>
-	<div class="PanelShadow"></div>
+	
 <?php } ?>	
 	
 	<?php if ($show_anonymous_login_panel && isset($anonymous_login) && (isset($username)) && ($username==$anonymous_login))
@@ -648,7 +621,7 @@ if (!$basic_simple_search)
 	  <h2><?php echo $lang["login"]?></h2>
 
   
-  <form id="form1" method="post" action="<?php echo $baseurl?>/login.php">
+  <form id="simple_search_form" method="post" action="<?php echo $baseurl?>/login.php">
   <div class="SearchItem"><?php echo $lang["username"]?><br/><input type="text" name="username" id="name" class="SearchWidth" /></div>
   
   <div class="SearchItem"><?php echo $lang["password"]?><br/><input type="password" name="password" id="name" class="SearchWidth" /></div>
@@ -661,7 +634,7 @@ if (!$basic_simple_search)
 	</div>
  
 	</div>
-	<div class="PanelShadow"></div>
+	
 	<?php
 	}
 ?>
@@ -678,7 +651,7 @@ if (!$basic_simple_search)
 	</div><br />
 	<?php } /* end replaceresearchrequestboxcontent */ ?>
 	</div>
-	<div class="PanelShadow"></div>
+	
 	<?php } /* end replaceresearchrequestbox */ ?>
 	<?php } ?>
 

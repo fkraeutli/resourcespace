@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; #if (!checkperm("s")) {exit ("Permission denied.");}
 include_once "../include/collections_functions.php";
 include "../include/resource_functions.php";
@@ -297,7 +297,9 @@ if(!$user_select_internal)
 	<div class="Question">
 	<label><?php echo $lang["externalselectresourceexpires"]?></label>
 	<select name="expires" class="stdwidth">
-		<option value=""><?php echo $lang["never"]?></option>
+		<?php 
+		global $collection_share_expire_days, $collection_share_expire_never;
+		if($collection_share_expire_never){?><option value=""><?php echo $lang["never"]?></option><?php }?>
 		<?php 
 		for ($n=1;$n<=150;$n++)
 			{
@@ -322,22 +324,27 @@ if(!$user_select_internal)
 	<div class="Question">
 	<label for="groupselect"><?php echo $lang["externalshare_using_permissions_from_user_group"] ?></label>
 	<select id="groupselect" name="usergroup" class="stdwidth">
-	<?php $grouplist=get_usergroups(true);
-	foreach ($grouplist as $group)
-		{
-		?>
-		<option value="<?php echo $group["ref"] ?>" <?php if ($usergroup==$group["ref"]) { ?>selected<?php } ?>><?php echo $group["name"] ?></option>
-		<?php
-		}
-	?>
+    <?php
+    $grouplist = get_usergroups(true);
+    foreach($grouplist as $group)
+        {
+        if(!empty($allowed_external_share_groups) && !in_array($group['ref'], $allowed_external_share_groups))
+            {
+            continue;
+            }
+        ?>
+        <option value="<?php echo $group["ref"] ?>" <?php if ($usergroup==$group["ref"]) { ?>selected<?php } ?>><?php echo $group["name"] ?></option>
+        <?php
+        }
+        ?>
 	</select>
 	<div class="clearerleft"> </div>
 	</div>
-	<?php } ?>
-
-	<?php hook("collectionemailafterexternal");
+	<?php }
 	
 	} // End of section checking $user_select_internal
+	
+	hook("collectionemailafterexternal");
 	?>
 
 <?php if ($collection["user"]==$userref) { # Collection owner can request feedback.

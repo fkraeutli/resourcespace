@@ -17,14 +17,15 @@ for ($m=0;$m<count($field['node_options']);$m++)
 		$option_trans_simple[]=$trans;
 	}
 	}
-
+	
 if ($auto_order_checkbox && !hook("ajust_auto_order_checkbox","",array($field))) {
 	if($auto_order_checkbox_case_insensitive){natcasesort($option_trans);}
 	else{natsort($option_trans);}
 }
 $field['node_options']=array_keys($option_trans); # Set the options array to the keys, so it is now effectively sorted by translated string	
 $field['node_options']=array_diff($field['node_options'], array(''));
-$set=trim_array(explode(",",$value));
+//$set=trim_array(explode(",",$value));
+$set=array_unique(preg_split('/,|\~\w+\:/',$value));        // this will remove language variants such as "~en:my option in english"
 $wrap=0;
 
 # Work out an appropriate number of columns based on the average length of the options.
@@ -82,7 +83,7 @@ if ($checkbox_ordered_vertically)
 					{
 					/*if(!hook("replace_checkbox_vertical_rendering","",array($name,$option,$ref=$field["ref"],$set))){*/
 						?>
-						<td width="1"><input type="checkbox" id="<?php echo $name; ?>" name="<?php echo $name?>" value="yes" <?php if (in_array($option,$set)) {?>checked<?php } ?> 
+						<td width="1"><input type="checkbox" id="<?php echo $name; ?>" name="<?php echo $name?>" value="yes" <?php if (in_array($trans,$set)) {?>checked<?php } ?> 
 						<?php if ($edit_autosave) {?>onChange="AutoSave('<?php echo $field["ref"] ?>');" onmousedown="checkbox_allow_save();"<?php } ?>
 						/></td><td><label class="customFieldLabel" for="<?php echo $name; ?>" <?php if($edit_autosave) { ?>onmousedown="checkbox_allow_save();" <?php } ?>><?php echo htmlspecialchars($trans)?></label></td>
 						<?php
@@ -107,7 +108,7 @@ else
 		$name=$field["ref"] . "_" . md5($option);
 		$wrap++;if ($wrap>$cols) {$wrap=1;?></tr><tr><?php }
 		?>
-		<td width="1"><input type="checkbox" name="<?php echo $name?>" value="yes" <?php if (in_array($option,$set)) {?>checked<?php } ?>
+		<td width="1"><input type="checkbox" name="<?php echo $name?>" value="yes" <?php if (in_array($trans,$set)) {?>checked<?php } ?>
 		<?php if ($edit_autosave) {?>onChange="AutoSave('<?php echo $field["ref"] ?>');"<?php } ?>
 		 /></td><td><?php echo htmlspecialchars($trans)?>&nbsp;</td>
 		<?php

@@ -4,6 +4,7 @@
 $valid=true;
 $autologgedout=false;
 $nocookies=false;
+$is_authenticated=false;
 
 if (!function_exists("ip_matches")){
 function ip_matches($ip, $ip_restrict)
@@ -48,14 +49,9 @@ if ($api && $enable_remote_apis ){
 	include_once "login_functions.php";
 	if (getval("key","")==""){
 		$ip=get_ip();
-		if (isset($_SERVER['HTTP_REFERER'])){$referer=$_SERVER['HTTP_REFERER'];}else { $referer="";}
 		$current_whitelists=sql_query("select u.username,u.fullname,w.* from api_whitelist w join user u on w.userref=u.ref order by u.username");
-		$allowed_by_domain=false;
 		foreach ($current_whitelists as $whitelist){
-			if ($referer!="" && strpos($referer,$whitelist['ip_domain'])!==false){
-				$allowed_by_domain=true;
-			}
-			if ($allowed_by_domain || ip_matches($ip,$whitelist['ip_domain'])){
+			if (ip_matches($ip,$whitelist['ip_domain'])){
 				// IP matches. Log in as specified user
 				$api_whitelisted_user=sql_query("select * from user where ref='".$whitelist['userref']."'");
 				$_POST['key']=$_GET['key']=make_api_key($api_whitelisted_user[0]['username'],$api_whitelisted_user[0]['password']);
@@ -140,22 +136,25 @@ if (array_key_exists("user",$_COOKIE) || array_key_exists("user",$_GET) || isset
 	if (isset($anonymous_login) && ($username==$anonymous_login)) {$user_select_sql="and u.username='$username'";} # Automatic anonymous login, do not require session hash.
 	hook('provideusercredentials');
 
-    $userdata=sql_query("select u.ref, u.username, g.permissions, g.fixed_theme, g.parent, u.usergroup, u.current_collection, u.last_active, timestampdiff(second,u.last_active,now()) idle_seconds,u.email, u.password, u.fullname, g.search_filter, g.edit_filter, g.ip_restrict ip_restrict_group, g.name groupname, u.ip_restrict ip_restrict_user, resource_defaults, u.password_last_change,g.config_options,g.request_mode, g.derestrict_filter, u.hidden_collections from user u,usergroup g where u.usergroup=g.ref $user_select_sql and u.approved=1 and (u.account_expires is null or u.account_expires='0000-00-00 00:00:00' or u.account_expires>now())");//print_r($userdata);
-    if (count($userdata)>0)
+    $userdata = sql_query("SELECT u.ref, u.username, g.permissions, g.fixed_theme, g.parent, u.usergroup, u.current_collection, u.last_active, timestampdiff(second, u.last_active, now()) idle_seconds, u.email, u.password, u.fullname, g.search_filter, g.edit_filter, g.ip_restrict ip_restrict_group, g.name groupname, u.ip_restrict ip_restrict_user, u.search_filter_override, resource_defaults, u.password_last_change, g.config_options, g.request_mode, g.derestrict_filter, u.hidden_collections, u.accepted_terms FROM user u, usergroup g WHERE u.usergroup = g.ref {$user_select_sql} AND u.approved = 1 AND (u.account_expires IS NULL OR u.account_expires = '0000-00-00 00:00:00' OR u.account_expires > now())");
+
+    if(0 < count($userdata))
         {
-        $valid=true;
+        $valid = true;
+        setup_user($userdata[0]);
 
-		
-	setup_user($userdata[0]);
-
-        if ($password_expiry>0 && !checkperm("p") && $allow_password_change && $pagename!="user_change_password" && $pagename!="index" && $pagename!="collections" && strlen(trim($userdata[0]["password_last_change"]))>0)
+        if ($password_expiry>0 && !checkperm("p") && $allow_password_change && $pagename!="user_change_password" && $pagename!="index" && $pagename!="collections" && strlen(trim($userdata[0]["password_last_change"]))>0 && getval("modal","")=="")
         	{
         	# Redirect the user to the password change page if their password has expired.
 	        $last_password_change=time()-strtotime($userdata[0]["password_last_change"]);
-			if ($last_password_change>($password_expiry*60*60*24))
-				{
-				redirect("pages/user/user_change_password.php?expired=true");
-				}
+		if ($last_password_change>($password_expiry*60*60*24))
+			{
+			?>
+			<script>
+			top.location.href="<?php echo $baseurl_short?>pages/user/user_change_password.php?expired=true";
+			</script>
+			<?php
+			}
         	}
         
         if (!isset($system_login) && strlen(trim($userdata[0]["last_active"]))>0)
@@ -205,7 +204,7 @@ else
     
     # Set a cookie that we'll check for again on the login page after the redirection.
     # If this cookie is missing, it's assumed that cookies are switched off or blocked and a warning message is displayed.
-    setcookie("cookiecheck","true",0,'/', '', false, true);
+    rs_setcookie('cookiecheck', 'true', 0, '/');
     hook("removeuseridcookie");
     }
 
@@ -263,9 +262,21 @@ if (isset($ip_restrict_group)){
 		}
 	}
 }
+
 #update activity table
 global $pagename;
-$terms="";if (($pagename!="login") && ($pagename!="terms")) {$terms=",accepted_terms=1";} # Accepted terms
+
+/*
+Login terms have not been accepted? Redirect until user does so
+Note: it is considered safe to show the collection bar because even if we enable login terms
+      later on, when the user might have resources in it, they would not be able to do anything with them
+      unless they accept terms
+*/
+if($terms_login && 0 == $useracceptedterms && 'login' != $pagename && 'terms' != $pagename && 'collections' != $pagename)
+    {
+    redirect('pages/terms.php?noredir=true&url=' . urlencode("pages/{$default_home_page}"));
+    }
+
 if (!$api){
 	if (isset($_SERVER["HTTP_USER_AGENT"])){
 	$last_browser=escape_check(substr($_SERVER["HTTP_USER_AGENT"],0,250));
@@ -278,7 +289,7 @@ if (!$api){
 
 // don't update this table if the System is doing it's own operations
 if (!isset($system_login)){
-	sql_query("update user set lang='$language', last_active=now(),logged_in=1,last_ip='" . get_ip() . "',last_browser='" . $last_browser . "'$terms where ref='$userref'",false,-1,true,0);
+	sql_query("update user set lang='$language', last_active=now(),logged_in=1,last_ip='" . get_ip() . "',last_browser='" . $last_browser . "' where ref='$userref'",false,-1,true,0);
 }
 
 # Add group specific text (if any) when logged in.
@@ -352,12 +363,12 @@ switch($ctheme)
 foreach($active_plugins as $plugin)
 	{
 	#Get Yaml
-	$plugin_yaml_path = dirname(__FILE__)."/../plugins/".$plugin["name"]."/".$plugin["name"].".yaml";
+	$plugin_yaml_path = get_plugin_path($plugin["name"]) ."/".$plugin["name"].".yaml";
 	$py="";
 	$py = get_plugin_yaml($plugin_yaml_path, false);
 
 	# Check 
-	if((!isset($userfixedtheme) || $userfixedtheme=="") && (isset($py["userpreferencegroup"]) && preg_replace("/^col-/","",$py["name"])==$ctheme))
+	if((!isset($userfixedtheme) || $userfixedtheme=="") && preg_replace("/^col-/","",$py["name"])==$ctheme)
 		{
 		$exists = sql_value("SELECT name as value FROM plugins WHERE name='".$plugin["name"]."'",'');
 		if($exists)
@@ -370,7 +381,7 @@ foreach($active_plugins as $plugin)
 		}
 
 	# Check group access and applicable for this user in the group
-	if(!isset($py["userpreferencegroup"]) && $plugin['enabled_groups']!='')
+	if($plugin['enabled_groups']!='')
 		{
 		$s=explode(",",$plugin['enabled_groups']);
 		if (isset($usergroup) && in_array($usergroup,$s))
@@ -381,7 +392,7 @@ foreach($active_plugins as $plugin)
 			$plugins[]=$plugin['name'];
 			}
 		}
-	else if(!isset($py["userpreferencegroup"]) && $plugin['enabled_groups']=='')
+	else if($plugin['enabled_groups']=='')
 		{
 		$plugins[]=$plugin['name'];
 		}
@@ -395,11 +406,8 @@ foreach($plugins as $plugin)
 process_config_options($userref);
 
 hook('handleuserref','',array($userref));
-if (($userpassword=="b58d18f375f68d13587ce8a520a87919" || $userpassword== "b975fc60c53ab4780623e0cd813095e328ddf8ff5a3d01d134f6df7391c42ff5" ) && $pagename!="user_change_password"  && $pagename!="collections"){?>
-<script>
-	top.location.href="<?php echo $baseurl_short?>pages/user/user_change_password.php";
-</script>
-<?php }
+
+$is_authenticated=true;
 
 
 

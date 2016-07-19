@@ -138,6 +138,7 @@ $lang["property-regexp_filter"]="Regexp filter";
 $lang["information-regexp_filter"]="Regular Expression filtering - e.g. '[A-Z]+' will ensure only upper case letters can be entered.";
 $lang["information-regexp_fail"]="The entered value was not in the required format.";
 $lang["property-tab_name"]="Tab name";
+$lang["property-push_metadata"]="Push metadata";
 $lang["property-smart_theme_name"]="Smart featured collection name";
 $lang["property-exiftool_field"]="Exiftool field";
 $lang["property-exiftool_filter"]="Exiftool filter";
@@ -158,6 +159,7 @@ $lang["information-display_condition"]="Display condition: this field will only 
 $lang["property-onchange_macro"]="On change macro";
 $lang["information-onchange_macro"]="On change macro: code to be executed when field value is changed. CAUTION ADVISED";
 $lang["information-derestrict_filter"]="Derestrict filter. Can be used in conjunction with g permission so that all resources are restricted unless metadata condition is met";
+$lang["information-push_metadata"]="If set, the metadata for this resource will be displayed on the resource view page for any related resources. For example, you may relate several photos to a person resource. If this property is set on the person resource, then the person metadata will appear on all related photo resource records, avoiding duplication of data in the system.";
 
 $lang["property-query"]="Query";
 
@@ -165,6 +167,7 @@ $lang["information-id"]="Note: 'Id' below MUST be set to a three character uniqu
 $lang["property-id"]="Id";
 $lang["property-width"]="Width";
 $lang["property-height"]="Height";
+$lang["property-quality"]="Quality";
 $lang["property-pad_to_size"]="Pad to size";
 $lang["property-internal"]="Internal";
 $lang["property-allow_preview"]="Allow preview";
@@ -200,8 +203,9 @@ $lang["myrequests"]="My requests";
 $lang["collections"]="Collections";
 $lang["mycontributions"]="My contributions";
 $lang["researchrequest"]="Research request";
-$lang["helpandadvice"]="Help & advice";
-$lang["teamcentre"]="Team Centre";
+$lang["helpandadvice"]="Knowledge Base";
+$lang["teamcentre"]="Admin";
+
 # footer link
 $lang["aboutus"]="About us";
 $lang["interface"]="Interface";
@@ -240,7 +244,7 @@ $lang["gotoadvancedsearch"]="Advanced search";
 $lang["viewnewmaterial"]="View new material";
 $lang["researchrequestservice"]="Research request service";
 
-# Team Centre
+# Admin
 $lang["manageresources"]="Manage resources";
 $lang["overquota"]="Over disk space quota; cannot add resources";
 $lang["managearchiveresources"]="Manage archive resources";
@@ -248,8 +252,7 @@ $lang["managethemes"]="Manage featured collections";
 $lang["manageresearchrequests"]="Manage research requests";
 $lang["manageusers"]="Manage users";
 $lang["managecontent"]="Manage content";
-$lang["viewstatistics"]="View statistics";
-$lang["viewreports"]="View reports";
+$lang["viewreports"]="Reports";
 $lang["viewreport"]="View report";
 $lang["treeobjecttype-report"]=$lang["report"]="Report";
 $lang["sendbulkmail"]="Send bulk mail";
@@ -274,8 +277,7 @@ $lang["pluginssetup"]="Manage plugins";
 $lang["pluginmanager"]="Plugin manager";
 $lang["users"]="Users";
 
-
-# Team Centre - Bulk E-mails
+# Admin - Bulk E-mails
 $lang["emailrecipients"]="E-mail recipient(s)";
 $lang["emailsubject"]="E-mail subject";
 $lang["emailtext"]="E-mail text";
@@ -285,10 +287,10 @@ $lang["emailsent"]="The e-mail has been sent.";
 $lang["mustspecifyoneuser"]="You must specify at least one user";
 $lang["couldnotmatchusers"]="Could not match all the usernames, or usernames were duplicated";
 
-# Team Centre - User management
+# Admin - User management
 $lang["comments"]="Comments";
 
-# Team Centre - Resource management
+# Admin - Resource management
 $lang["viewuserpending"]="View user contributed resources pending review";
 $lang["userpending"]="User contributed resources pending review";
 $lang["viewuserpendingsubmission"]="View user contributed resources pending submission";
@@ -385,6 +387,8 @@ $lang["toggle"]="Toggle";
 $lang["resize"]="Resize";
 $lang["contactsheet"]="Contact sheet";
 $lang["mycollection"]="My Collection";
+$lang["geolocatecollection"]="Geolocate collection";
+$lang["geoemptycollection"]="You provided an empty collection. Please add assets and try again.";
 $lang["editresearchrequests"]="Edit research requests";
 $lang["research"]="Research";
 $lang["savedsearch"]="Saved search";
@@ -457,6 +461,7 @@ $lang["rotateanticlockwise"]="Rotate anti-clockwise";
 $lang["increasegamma"]="Brighten previews";
 $lang["decreasegamma"]="Darken previews";
 $lang["restoreoriginal"]="Restore original";
+$lang["createpreviews"]="Create previews";
 $lang["recreatepreviews"]="Recreate previews";
 $lang["retrypreviews"]="Retry preview creation";
 $lang["specifydefaultcontent"]="Specify default content for new resources";
@@ -495,7 +500,7 @@ $lang["asadded"]="As added";
 $lang["popularity"]="Popularity";
 $lang["rating"]="Rating";
 $lang["colour"]="Colour";
-$lang["jumptopage"]="Jump to page";
+$lang["jumptopage"]="Page";
 $lang["jump"]="Jump";
 $lang["titleandcountry"]="Title / country";
 $lang["torefineyourresults"]="To refine your results, try";
@@ -550,6 +555,7 @@ $lang['calibre_pdf']="generated by Calibre";
 $lang["resourcenotfound"]="Resource not found.";
 $lang['remove_custom_access_users_groups'] = 'Users and groups with custom access';
 $lang['remove_custom_access_no_users_found'] = 'No users or groups with custom access found.';
+$lang['action-generate_pdf'] = 'Generate PDF';
 
 # Resource log - actions
 $lang["resourcelog"]="Resource log";
@@ -567,6 +573,7 @@ $lang["log-s"]="Change status";
 $lang["log-a"]="Change access";
 $lang["log-r"]="Reverted metadata";
 $lang["log-b"]="Created alternate";
+$lang["log-y"]="Deleted alternate";
 $lang["log-missinglang"]="[type] (missing lang)"; # [type] will be replaced.
 $lang['log-adminpermissionsrequired'] = 'Full admin permission required!';
 
@@ -682,7 +689,7 @@ $lang["searchresearchrequests"]="Search Research Requests";
 $lang["requestasuser"]="Request as user";
 $lang["haspostedresearchrequest"]="has posted a research request"; # username is suffixed to this
 $lang["newresearchrequestwaiting"]="New research request waiting";
-$lang["researchrequestassignedmessage"]="Your research request has been assigned to a member of the team. Once we've completed the research you'll receive an e-mail with a link to all the resources that we recommend.";
+$lang["researchrequestassignedmessage"]="Your research request has been assigned to a member of the admin team. Once we've completed the research you'll receive an e-mail with a link to all the resources that we recommend.";
 $lang["researchrequestassigned"]="Research request assigned";
 $lang["researchrequestcompletemessage"]="Your research request is complete and has been added to your 'my collections' page.";
 $lang["researchrequestcomplete"]="Research request completed";
@@ -698,7 +705,7 @@ $lang["treeobjecttype-group"]=$lang["group"]="Group";
 $lang["groupsmart"]="Group (Smart)";
 $lang["confirmaddgroup"]="Are you sure you want to add all the current members in this group?";
 $lang["confirmaddgroupsmart"]="Are you sure you want to dynamically include members in this group?";
-$lang["backtoteamhome"]="Back to team centre home";
+$lang["backtoteamhome"]="Back to admin home";
 $lang["columnheader-resource_id"]=$lang["resourceid"]="Resource ID";
 $lang["id"]="ID";
 $lang["todate"]="To date";
@@ -729,7 +736,7 @@ $lang["key"]="Key:"; # e.g. explanation of icons on search page
 $lang["default"]="Default";
 $lang["languageselection"]="Language selection";
 $lang["language"]="Language";
-$lang["changeyourpassword"]="Change your password";
+$lang["changeyourpassword"]="Change my password";
 $lang["yourpassword"]="Your password";
 $lang["currentpassword"]="Current password";
 $lang["newpassword"]="New password";
@@ -740,6 +747,8 @@ $lang["wrongpassword"]="Incorrect password, please try again";
 $lang["action-view"]="View";
 $lang["action-preview"]="Preview";
 $lang["action-expand"]="Expand";
+$lang["action-more"]="More";
+$lang["action-less"]="Less";
 $lang["action-select"]="Select";
 $lang["action-download"]="Download";
 $lang["action-email"]="E-mail";
@@ -749,6 +758,7 @@ $lang["action-deletecollection"]="Delete collection";
 $lang["action-revertmetadata"]="Revert metadata";
 $lang["confirm-revertmetadata"]="Are you sure you want to re-extract the original metadata from this file? This action will simulate a re-upload of the file, and you will lose any altered metadata.";
 $lang["action-remove"]="Remove";
+$lang['action-replace'] = 'Replace';
 $lang["complete"]="Complete";
 $lang["backtohome"]="Back to the home page";
 $lang["continuetohome"]="Continue to the home page";
@@ -791,6 +801,9 @@ $lang["status-note"]="NOTE";
 $lang["action-changelanguage"]="Change language";
 $lang["loading"]="Loading...";
 $lang['disable_languages']='Disable language selection options';
+$lang['import_export'] = 'Import/ Export';
+$lang['import'] = 'Import';
+$lang['export'] = 'Export';
 
 # Pager
 $lang["next"]="Next";
@@ -824,6 +837,8 @@ $lang["stat-resourceview"]="Resource view";
 $lang["stat-search"]="Search";
 $lang["stat-usersession"]="User session";
 $lang["stat-addedsmartcollection"]="Added smart collection";
+$lang["stat-removedresourcefromcollection"]="Removed resource from collection";
+$lang["stat-keywordusage-noresultsfound"]="Keyword usage - no results found";
 
 # Access
 $lang["access0"]="Open";
@@ -881,6 +896,8 @@ $lang["externalshareexpired"]="Sorry, this share has expired and is no longer av
 $lang["notapprovedsharecollection"]="One or more resources in this collection are not active and therefore sharing is prohibited.";
 $lang["notapprovedsharetheme"]="Sharing is prohibited for at least one collection, because one or more resources is not active.";
 $lang["notapprovedresources"]="The following resources are not active and cannot be added to a shared collection: ";
+$lang['error_generating_access_key'] = 'Could not generate an access key';
+$lang['access_key_deleted'] = "Access key '%access_key' deleted";
 
 
 # New for 1.3
@@ -952,9 +969,11 @@ $lang["requiredantispam"]="The anti-spam code has not been entered correctly, pl
 $lang["viewduplicates"]="View duplicate resources";
 $lang["duplicateresources"]="Duplicate resources";
 $lang["duplicateresourcesfor"]="Duplicate resources for ";
+$lang["duplicateresourceupload"]="Upload failed. This file matches existing resources:";
 $lang["noresourcesfound"]="No resources found";
 $lang["userlog"]="User log";
 $lang["ipaddressrestriction"]="IP address restriction (optional)";
+$lang["searchfilteroverride"]="Search filter override";
 $lang["wildcardpermittedeg"]="Wildcard permitted e.g.";
 
 # New for 1.6
@@ -1043,8 +1062,10 @@ $lang["userrequestnotification1"]="The User Login Request form has been complete
 $lang["userrequestnotification2"]="If this is a valid request, please visit the system at the URL below and create an account for this user.";
 $lang["ipaddress"]="IP Address";
 $lang["userresourcessubmitted"]="The following user contributed resources have been submitted for review:";
+$lang["userresourcessubmittednotification"]="This user has submitted resources for review.";
 $lang["userresourcesapproved"]="Your submitted resources have been approved:";
 $lang["userresourcesunsubmitted"]="The following user contributed resources have been unsubmitted, and no longer require review:";
+$lang["userresourcesunsubmittednotification"]="This user has changed the status of these resources so no longer require review.";
 $lang["viewalluserpending"]="View all user contributed resources pending review:";
 
 # New for 1.7
@@ -1094,6 +1115,11 @@ $lang["setup-mysqldb"]="MySQL database";
 $lang["setup-mysqlbinpath"]="MySQL binary path";
 $lang["setup-generalsettings"]="General settings";
 $lang["setup-baseurl"]="Base URL";
+$lang['setup-admin_fullname'] = 'Admin full name';
+$lang['setup-admin_email'] = 'Admin e-mail';
+$lang['setup-admin_username'] = 'Admin username';
+$lang['setup-admin_password'] = 'Admin password';
+
 $lang["setup-emailfrom"]="Email from address";
 $lang["setup-emailnotify"]="Email notify";
 $lang["setup-spiderpassword"]="Spider password";
@@ -1109,6 +1135,8 @@ $lang["setup-if_mysqlpassword"]="The password for the MySQL username entered abo
 $lang["setup-if_mysqldb"]="The Name of the MySQL database RS will use. (This database must exist.)";
 $lang["setup-if_mysqlbinpath"]="The path to the MySQL client binaries - e.g. mysqldump. NOTE: This is only needed if you plan to use the export tool.";
 $lang["setup-if_baseurl"]="The 'base' web address for this installation.  NOTE: No trailing slash.";
+$lang['setup-if_admin_username']='The username used to connect to ResourceSpace. This user will be the first user of the system.';
+$lang['setup-if_admin_password']='The password for the Admin username entered above.';
 $lang["setup-if_emailfrom"]="The address that emails from RS appear to come from.";
 $lang["setup-if_emailnotify"]="The email address to which resource/user/research requests are sent.";
 $lang["setup-if_spiderpassword"]="The spider password is a required field.";
@@ -1123,6 +1151,7 @@ $lang["setup-err_scramblekey"]="If this is a public installation, setting the sc
 $lang["setup-err_apiscramblekey"]="If this is a public installation, setting the api scramble key is recommended.";
 $lang["setup-err_path"]="Unable to verify location of";
 $lang["setup-emailerr"]="Not a valid email address.";
+$lang['setup-admin_fullname_error'] = "A user's full name cannot be an empty string.";
 $lang["setup-rs_initial_configuration"]="ResourceSpace: Initial Configuration";
 $lang["setup-include_not_writable"]="'/include' not writable. Only required during setup.";
 $lang["setup-override_location_in_advanced"]="Override location in 'Advanced Settings'.";
@@ -1162,6 +1191,7 @@ $lang["setup-login_to"]="Login to";
 $lang["setup-configuration_file_output"]="Configuration file output";
 $lang["more-information"]="More information";
 $lang["setup-structuralplugins"]="System templates";
+$lang["setup-headercolourstyleoverride"]="Custom header colour";
 
 # Collection log - actions
 $lang["collectionlog"]="Collection log";
@@ -1208,7 +1238,7 @@ $lang["never"]="Never";
 $lang["approved"]="Approved";
 $lang["notapproved"]="Not approved";
 
-$lang["userrequestnotification3"]="If this is a valid request, click the link below to review the details and approve the user account.";
+$lang["userrequestnotification3"]="If this is a valid request, click the link to review the details and approve the user account.";
 
 $lang["ticktoapproveuser"]="You must tick the box to approve this user if you wish to enable this account";
 
@@ -1245,6 +1275,7 @@ $lang["allowedextensions"]="Allowed extensions";
 $lang["allowedextensions-extensions"]="Allowed extensions: %EXTENSIONS"; # Use %EXTENSIONS, %extensions or %Extensions as a placeholder. The placeholder will be replaced with the filename extensions, using the same case. E.g. "Allowed Extensions: %EXTENSIONS" -> "Allowed Extensions: JPG, PNG"
 
 $lang["alternativebatchupload"]="Upload alternative files";
+$lang["alternativelocalupload"]="Upload alternative files - fetch from local upload folder";
 
 $lang["confirmdeletefieldoption"]="Are you sure you wish to DELETE this field option?";
 
@@ -1324,7 +1355,9 @@ $lang['location-title'] = 'Location data';
 $lang['location-add'] = 'Add location';
 $lang['location-edit'] = 'Edit location';
 $lang['location-details'] = 'Use "Drag mode" to switch between pin positioning and panning. Use zoom controls to zoom in and out. Click Save to save pin position and zoom level.';
+$lang['location-missing'] = 'The following resources lack geolocation data and are not displayed:';
 $lang['location-noneselected']="No location selected";
+$lang['location-noneselected']="No location data";
 $lang['location'] = 'Location';
 $lang['mapzoom'] = 'Map zoom';
 $lang['openstreetmap'] = "OpenStreetMap";
@@ -1634,7 +1667,7 @@ $lang["can_see_all_theme_categories"]="Can see all featured collection categorie
 $lang["can_see_theme_category"]="Can see featured collection category";
 $lang["can_see_theme_sub_category"]="Can see featured collection subcategory";
 $lang["display_only_resources_within_accessible_themes"]="When searching, display only resources that exist within featured collections to which the user has access";
-$lang["can_access_team_centre"]="Can access the Team Centre area";
+$lang["can_access_team_centre"]="Can access the admin area";
 $lang["can_manage_research_requests"]="Can manage research requests";
 $lang["can_manage_resource_requests"]="Can manage resource requests";
 $lang["can_manage_content"]="Can manage content (intro/help text)";
@@ -1847,7 +1880,7 @@ $lang["caps-lock-on"]="Warning! Caps Lock is on";
 $lang["collectionnames"]="Collection names";
 $lang["findcollectionthemes"]="Featured collections";
 $lang["upload-options"]="Upload options";
-$lang["user-preferences"]="User preferences";
+$lang["user-preferences"]="My preferences";
 $lang["allresources"]="All Resources";
 
 $lang["smart_collection_result_limit"]="Smart collection: result count limit";
@@ -2089,6 +2122,7 @@ $lang["all__footer"]="Powered by <a target=\"_blank\" href=\"http://www.resource
 $lang["all__researchrequest"]="Let our resources team find the resources you need.";
 $lang["all__searchpanel"]="Search using descriptions, keywords and resource numbers";
 $lang["change_language__introtext"]="Please select your language below.";
+$lang['collection_download__write_metadata_on_download_label'] = 'Embed resource metadata in the downloaded file(s)?';
 $lang["collection_edit__introtext"]="Organise and manage your work by grouping resources together. Create 'Collections' to suit your way of working.\n\n<br />\n\nAll the collections in your list appear in the 'My Collections' panel at the bottom of the screen\n\n<br /><br />\n\n<strong>Private Access</strong> allows only you and and selected users to see the collection. Ideal for grouping resources under projects that you are working on independently and share resources amongst a project team.\n\n<br /><br />\n\n<strong>Public Access</strong> allows all users of the system to search and see the collection. Useful if you wish to share collections of resources that you think others would benefit from using.\n\n<br /><br />\n\nYou can choose whether you allow other users (public or users you have added to your private collection) to add and remove resources or simply view them for reference.";
 $lang["collection_email__introtext"]="Please complete the form below. The recipients will receive an email containing links to the collections rather than file attachments so they can choose and download the appropriate resources.";
 $lang["collection_email__introtextthemeshare"]="Complete the form below to e-mail the featured collections in this featured collection category. The recipients will receive an email containing links to each of the featured collections.";
@@ -2108,9 +2142,11 @@ $lang["done__user_password"]="An e-mail containing your username and password ha
 $lang["done__user_request"]="Your request for a user account has been sent. Your login details will be sent to you shortly.";
 $lang["download_click__introtext"]="To download the resource file, right click the link below and choose \"Save As...\". You will then be asked where you would like to save the file. To open the file in your browser simply click the link.";
 $lang["download_progress__introtext"]="Your download will start shortly. When your download completes, use the links below to continue.";
+$lang["downloadfile_nofile"]="The file requested was not found.";
 $lang["edit__batch"]="";
 $lang["edit__multiple"]="Please select which fields you wish to overwrite. Fields you do not select will be left untouched.";
-$lang["help__introtext"]="<p>Get the most out of ResourceSpace. The Knowledge Base will help you use the system and the resources more effectively. </p>\n<p><a target=\"_blank\" href=\"http://www.resourcespace.org/knowledge-base/\">ResourceSpace Knowledge Base</a></p>";
+$lang["help__introtext"]='<iframe src="http://www.resourcespace.org/knowledge-base/?from_rs=true" style="width:1235px;height:600px;border:none;margin:-20px;"/>
+';
 $lang["home__help"]="Help and advice to get the most out of ResourceSpace.";
 $lang["home__mycollections"]="Organise, collaborate & share your resources. Use these tools to help you work more effectively.";
 $lang["home__restrictedtext"]="Please click on the link that you were e-mailed to access the resources selected for you.";
@@ -2130,7 +2166,7 @@ $lang["team_batch_select__introtext"]="";
 $lang["team_batch_upload__introtext"]="";
 $lang["team_content__introtext"]="";
 $lang["team_copy__introtext"]="Enter the ID of the resource you would like to copy. Only the resource data will be copied - any uploaded file will not be copied.";
-$lang["team_home__introtext"]="Welcome to the team centre. Use the links below to administer resources, respond to resource requests, manage featured collections and alter system settings.";
+$lang["team_home__introtext"]="Welcome to the admin area. Use the links below to administer resources, respond to resource requests, manage featured collections and alter system settings.";
 $lang["team_report__introtext"]="Please choose a report and a date range. The report can be opened in Microsoft Excel or similar spreadsheet application.";
 $lang["team_research__introtext"]="Organise and manage 'Research Requests'. <br /><br />Choose 'edit research' to review the request details and assign the research to a team member. It is possible to base a research request on a previous collection by entering the collection ID in the 'edit' screen. <br /><br />Once the research request is assigned, choose 'edit collection' to add the research request to 'My collection' panel. Using the standard tools, it is then possible to add resources to the research. <br /><br />Once the research is complete, choose 'edit research',  change the status to complete and an email is automatically  sent to the user who requested the research. The email contains a link to the research and it is also automatically added to their 'My Collection' panel.";
 $lang["team_resource__introtext"]="Add individual resources or batch upload resources. To edit individual resources, simply search for the resource, and click edit in the 'Resource Tool' panel on the resource screen.";
@@ -2151,6 +2187,7 @@ $lang["user_request__introtext"]="Please complete the form below to request a us
 $lang["view__storyextract"]="Story extract:";
 $lang["notify_resource_change_email_subject"]="A resource has been modified";
 $lang["notify_resource_change_email"]="A resource that you downloaded in the past [days] days has been modified . Click the link below to view the resource.<br /><br /><a href='[url]'>[url]</a>";
+$lang["notify_resource_change_notification"]="A resource that you downloaded in the past [days] days has been modified.";
 $lang["passwordresetemail"]="Please click on the link below to reset your password.";
 $lang['password_reset_email_html'] = 'Username: [username]<br /><br />Please click on the link below to reset your password.<br /><br /><a href="[url]" target="_blank" >[url]</a>';
 $lang["passwordnewemail"]="Please click on the link below to set a new password for your account.";
@@ -2178,7 +2215,6 @@ $lang['disk_size_no_upload_explain']="Due to space constraints, uploading has be
  * Start - User Dash Strings
  */
 $lang["savethissearchtodash"]="Save to dash tile";
-$lang["pushtoallusers"]="Push this dash tile to all users?";
 $lang["createnewdashtile"]="Create new dash tile";
 $lang["specialdashtiles"]="Special dash tiles";
 $lang["editdashtile"]="Edit dash tile";
@@ -2197,7 +2233,7 @@ $lang["tilebin"]="Remove";
 $lang["last"]="Last";
 $lang["managedefaultdash"]="Manage all user tiles";
 $lang["dashtile"]="Dash tile";
-$lang["manage_own_dash"]="Manage my dash";
+$lang["manage_own_dash"]="My dash";
 $lang["manage_all_dash_h"]="Manage default dash / all user tiles (Requires h permission)";
 $lang["manage_all_dash"]="Manage default dash / all user tiles";
 $lang["dashtiledeleteaction"]="What delete action would you like to take?";
@@ -2216,6 +2252,15 @@ $lang["dasheditchangeall_users"]="Turning off this setting will not remove this 
 $lang["dashtilevisitlink"]="Visit target link";
 $lang["alluserprebuiltdashtiles"]="Create pre-constructed dash tiles (added for all users)";
 $lang["manageowndashinto"]="Manage dash tiles available for your dash. You can add / remove or edit tiles on your dash if you have the permissions to do so.";
+$lang['manage_all_user_dash_tiles_note'] = 'Note: Tiles shown with a red border are hidden to the users. Admins see them as there are other tiles available but hidden from these users';
+
+/* User group dash tiles */
+$lang['manage_user_group_dash_tiles']  = 'Manage user group dash tiles';
+$lang['who_should_see_dash_tile']      = 'Who should see this tile?';
+$lang['dash_tile_audience_me']         = 'only me';
+$lang['dash_tile_audience_all_users']  = 'all users';
+$lang['dash_tile_audience_user_group'] = 'specific user group(s)';
+/* End of user group dash tiles */
 
 /* Create Config dash tile link descriptions (text) */
 $lang["createdashtilependingsubmission"]="User contributions pending submission (hides if none in state)";
@@ -2271,7 +2316,7 @@ $lang['trash_bin_delete_dialog_title'] = 'Remove resource from current collectio
 /* My Account Strings */
 $lang["managecontent_defaulttextused"]="!! The text for the default language (?) is currently being used. Edit the text below to create an alternative version for this language / user group selection !!";
 $lang["myaccount"]="My account";
-$lang["userpreferences"]="User preferences";
+$lang["userpreferences"]="My preferences";
 $lang["modifyuserpreferencesintro"]="Options on this page allow you to make changes to some of the functionality  and interface that are available to you.";
 
 /* User preferences*/
@@ -2288,6 +2333,13 @@ $lang['userpreference_resource_view_modal_label'] = 'Resource view modal';
 $lang['userpreference_thumbs_default_label'] = 'Default collection bar display';
 $lang['userpreference_basic_simple_search_label'] = 'Basic simple search';
 $lang['userpreference_cc_me_label'] = 'CC me when sending resources and collections';
+$lang['userpreference_email_me_label'] = 'Send me emails instead of system notifications where possible';
+$lang['userpreference_email_digest_label'] = 'Send me a daily digest of notifications, instead of separate emails';
+$lang['userpreference_system_management_notifications'] = "Send me messages about important system events e.g. low disk space.";
+$lang['userpreference_user_management_notifications'] = "Send me user administration messages e.g. new user acount requests";
+$lang['userpreference_resource_access_notifications'] = "Send me messages about resource access e.g. resource requests";
+$lang['userpreference_resource_notifications'] = "Send me resource messages about resource management e.g. resource state changes, metadata changes";
+$lang['userpreference_exiftool_write_metadata_label'] = 'Write embedded metadata on download (provides option to choose this only on collection download)';
 
 /* System Config */
 $lang['systemconfig'] = 'System configuration';
@@ -2297,6 +2349,8 @@ $lang['systemconfig_multilingual'] = 'Multilingual';
 $lang['systemconfig_default_language_label'] = 'Default language';
 $lang['systemconfig_browser_language_label'] = 'Browser language detection';
 $lang['systemconfig_display_resource_id_in_thumbnail_label'] = 'Display resource ID on the thumbnail';
+$lang['systemconfig_advanced_search_contributed_by_label'] = 'Show "Contributed by" on Advanced Search';
+$lang['systemconfig_advanced_search_media_section_label'] = 'Show Media section on Advanced Search';
 $lang['systemconfig_navigation'] = 'Navigation';
 $lang['systemconfig_help_link_label'] = 'Show "Help & advice" link';
 $lang['systemconfig_recent_link_label'] = 'Show "Recently added" link';
@@ -2324,6 +2378,8 @@ $lang['systemconfig_max_login_attempts_per_ip_label'] = 'How many failed login a
 $lang['systemconfig_max_login_attempts_per_username_label'] = 'How many failed login attempts per username until a temporary ban is placed on this IP';
 $lang['systemconfig_max_login_attempts_wait_minutes_label'] = 'Waiting time (in minutes) for temporary banned users due to failed login attempts';
 $lang['systemconfig_password_brute_force_delay_label'] = 'Delay (in seconds) after failed attempts';
+$lang['systemconfig_option_not_allowed_error'] = 'Option not allowed! Please contact system admin';
+$lang['systemconfig_comments'] = 'Resource comments';
 
 /* Error Messages */
 $lang['error_check_html_first'] = 'Please Check HTML! The text used does not contain valid HTML.';
@@ -2344,6 +2400,7 @@ $lang["seen"]="Seen";
 $lang["from"]="From";
 $lang["mymessages"]="My messages";
 $lang["mymessages_markread"]="Mark read";
+$lang["mymessages_markunread"]="Mark unread";
 $lang["mymessages_markallread"]="Mark all read";
 $lang["mymessages_youhavenomessages"]="You have no messages to show";
 $lang["screen"]="Screen";
@@ -2351,15 +2408,97 @@ $lang["message_type"]="Message type";
 $lang["message_url"]="Message URL";
 $lang["sendbulkmessage"]="Send bulk message";
 $lang["message_sent"]="Message sent";
+$lang['email_and_screen']="Email and screen";
+$lang["sendbulkmailandmessage"]="Send bulk email and message";
+$lang["emailandmessagesent"]="Email and message sent";
 
 $lang["confirm_remove_custom_usergroup_access"]="This will revoke all custom user group access. Are you sure?";
-$lang['applogo_does_not_exists']="The uploaded logo is no longer available";
+$lang["applogo_does_not_exists"]="The uploaded logo is no longer available";
 
 /* Edit field options */
-$lang['manage_metadata_field_options'] = 'Manage metadata field options';
+$lang["manage_metadata_field_options"] = "Manage metadata field options";
+$lang['manage_metadata_field_options_import_options'] = 'Import options';
 $lang["system_performance"]="System performance";
 $lang["mysql_throughput"]="MySQL throughput";
 $lang["cpu_benchmark"]="CPU benchmark";
 $lang["disk_write_speed"]="Disk write speed";
-
 $lang["metadata_option_change_warning"]="Please note that at present, updating these options will not automatically alter stored parameters. Batch editing must be used to migrate existing stored values.";
+/* Manage slideshows */
+$lang["manage_slideshow"] = "Manage slideshow";
+$lang["action-add-new"] = "Add new";
+$lang["action-submit-button-label"] = "Submit";
+$lang["slideshow_use_static_image"] = "Use a single random image from the set (image will not change unless page is reloaded)";
+
+$lang["emailcollectionrequest"] = "[img_gfx/titles/title.gif]<br />The following user has made a request:<br />Username: [username]<br />User email: [useremail]<br /><br />Reason for request: [requestreason]<br /><br />Click the link below to view the request.<br /><a href='[requesturl]'>[requesturl]</a>";
+$lang["emailusercollectionrequest"] = "[img_gfx/titles/title.gif]<br />Your resource request has been submitted for approval and will be looked at shortly.:<br /><br />Reason for request: [requestreason]<br /><br />Click the link below to view the requested resources.<br /><a href='[url]'>[url]</a>";
+$lang['user_pref_show_notifications'] = "Show me system notifications on screen as they are received. If disabled, the counter will still update to indicate the presence of new messages";
+$lang['user_pref_daily_digest'] = "Send me a daily email with all unread notifications from the last 24 hours";
+$lang['email_daily_digest_subject'] = "Notification summary";
+$lang['email_daily_digest_text'] = "This is a summary of your unread messages from the last 24 hours";
+$lang['user_pref_daily_digest_mark_read'] = "Mark messages as read once I have been sent the summary email";
+$lang['user_pref_email_and_user_notifications']="Send me emails in addition to system notifications";
+$lang['notification_email_subject']="Notification email";
+$lang['mymessages_introtext'] = "You can configure which messages appear here by changing your user preferences";
+$lang["login_slideshow_image_notes"] = "This image will be used for the login page background only";
+$lang['media'] = "Media";
+$lang["pixel_height"]="Pixel height";
+$lang["pixel_width"]="Pixel width";
+$lang["file_extension_label"]="File extension";
+$lang["signin_required"]="You must be signed in to perform this action";
+$lang["signin_required_request_account"]="You must be signed in to perform this action. If you do not have an account you can request one by clicking on the above link";
+$lang["error_batch_edit_resources"] = "The following resources have not been updated";
+# Job queue message strings
+$lang["job_queue_manage"] = "Manage job queue";
+$lang["job_queue_manage_job"] = "Manage job";
+$lang["job_queue_type"] = "Job type";
+$lang["job_queue_duplicate_message"] = "Job creation failed. There is already a matching job in the queue.";
+$lang["alternative_file_created"] = "Alternative file successfully created.";
+$lang["alternative_file_creation_failed"] = "Alternative file creation failed";
+$lang["download_file_created"] = "Your file is ready for download.";
+$lang["download_file_creation_failed"] = "Your file download request failed.";
+$lang["replace_resource_preserve_original"]="Keep the existing file as an alternative?";
+$lang["replace_resource_original_description"]= "Original %EXTENSION file"; // %EXTENSION  will be relaced by originl file extension
+
+/* Manage external shares */
+$lang['permission_manage_external_shares'] = 'Can manage external shares with expiry set to "Never"';
+$lang['manage_external_shares'] = 'Manage external shares';
+$lang['filter_label'] = 'Filter';
+/* end of Manage external shares */
+
+
+$lang["rse_analytics"]="Analytics";
+$lang["new_report"]="New report";
+$lang["edit_report"]="Edit report";
+$lang["all_activity"]="All activity";
+
+$lang["report-graph-by-pie"]="breakdown";
+$lang["report-graph-by-piegroup"]="by user group";
+$lang["report-graph-by-line"]="over time";
+$lang["report-graph-by-summary"]="summary";
+$lang["update_report"]="Update report";
+$lang["save_report"]="Save report";
+$lang["save_report_as"]="Save report as...";
+
+$lang["report_graph_types"]="Graph types";
+$lang["report_no_data"]="No data for the selected criteria";
+
+$lang["report_breakdown_pie"]="Breakdown pie";
+$lang["report_user_group_pie"]="User group pie";
+$lang["report_time_line"]="Time line";
+$lang["report_summary_block"]="Summary block";
+
+$lang["report_total"]="Total";
+$lang["report_average"]="Daily average";
+$lang["report_maximum"]="Maximum";
+$lang["report_name"]="Report name";
+$lang["report_please_enter_name"]="Please enter a report name to save this report.";
+$lang["report_create_new"]="Create new report.";
+$lang["report_filter_to_collection"]="Include only resources within a collection";
+$lang["report_all_resources"]="(no collection filtering)";
+$lang["report_no_matching_activity_types"]="The selected activity type was not appropriate for collection filtering. Please choose another activity type or deselect the collection.";
+$lang["report_external_options"]="External shares...";
+$lang["report_external_option0"]="...are ignored";
+$lang["report_external_option1"]="...are combined with the user group of the sharing user";
+$lang["report_external_option2"]="...are reported as a separate user group";
+$lang["report_external_share"]="External share";
+$lang["report_add_to_dash"]="Add to dash";

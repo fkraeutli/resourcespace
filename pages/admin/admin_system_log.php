@@ -1,7 +1,7 @@
 <?php
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";
 
 if (!checkperm_user_edit($userref))
@@ -39,7 +39,7 @@ function SystemConsoleactivitylogLoad(refresh_secs, extra)
 
 <div class="BasicsBox">
 
-	<?php if ($backurl!=""){?><p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo strpos($backurl,"team_user_edit")!==false?$lang["edituser"]:$lang["manageusers"] ?></a></p><?php } ?>
+	<?php if ($backurl!=""){?><p><a href="<?php echo $backurl?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo strpos($backurl,"team_user_edit")!==false?$lang["edituser"]:$lang["manageusers"] ?></a></p><?php } ?>
 
 	<h1><?php echo $lang["systemlog"]; ?></h1>
 	<p><?php echo text("introtext"); ?></p>

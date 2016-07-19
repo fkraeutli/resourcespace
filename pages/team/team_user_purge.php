@@ -6,8 +6,8 @@
  * @subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
-include "../../include/authenticate.php"; if (!checkperm("u")) {exit ("Permission denied.");}
+include_once "../../include/general.php";
+include "../../include/authenticate.php"; if (!$user_purge || !checkperm("u")) {exit ("Permission denied.");}
 
 $months=getval("months","");
 if ($months!="")

@@ -7,7 +7,7 @@
 #
 
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 
 # Check database connectivity.
 $check=sql_value("select count(*) value from resource_type",0);
@@ -48,4 +48,29 @@ if($debug_log)
         }        
     }
 
-exit("OK");
+// Check that the cron process executed within the last 5 days (allows for a window of downtime, for migration, etc.).
+$last_cron=strtotime(sql_value("select value from sysvars where name='last_cron'",""));
+$diff_days=(time()-$last_cron) / (60 * 60 * 24);
+if ($diff_days>5) {exit("FAIL - cron was executed " . round($diff_days,0) . " days ago.");}
+
+
+
+// All is OK.
+// If the Subversion extension is installed, return the repo branch name and also the revision number after the OK message.
+$version="";
+if (function_exists("svn_info"))
+    {
+    $svn_info=@svn_info(dirname(__FILE__) . "/../../",false);
+    if (is_array($svn_info))
+        {
+	// Fetch the SVN revision. Unfortunately this needs to use the command line 
+	// "svnversion" utility as the revision provided by svn_info()
+	// is the latest revision of the repo itselfand not the local checkout - probably a bug.
+        $svnrevision=trim(shell_exec("svnversion ". dirname(__FILE__)));      
+
+        $svn_url=explode("/",$svn_info[0]["url"]);
+        $version.=" " . $svn_url[count($svn_url)-1] . "." . $svnrevision;
+        }
+    }
+
+exit("OK" . $version);

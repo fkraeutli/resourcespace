@@ -1,29 +1,50 @@
 <?php
+include '../include/db.php';
+include_once '../include/general.php';
 
+$k   = getvalescaped('k', '');
+$ref = getvalescaped('ref', '', true);
 
-include "../include/db.php";
-include "../include/general.php";
-include "../include/authenticate.php";
-include "../include/resource_functions.php";
-include_once "../include/collections_functions.php";
+// External access support (authenticate only if no key provided, or if invalid access key provided)
+if('' == $k || !check_access_key($ref, $k))
+    {
+    include '../include/authenticate.php';
+    }
 
-$ref=getvalescaped ("ref","",true);
-# fetch the current search (for finding similar matches)
-$search=getvalescaped("search","");
-$order_by=getvalescaped("order_by","relevance");
-$offset=getvalescaped("offset",0,true);
-$restypes=getvalescaped("restypes","");
-if (strpos($search,"!")!==false) {$restypes="";}
-$archive=getvalescaped("archive",0,true);
-$starsearch=getvalescaped("starsearch","");
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
-$metadata=get_resource_field_data($ref, false,true,-1,getval("k","")!=""); 
-$filename=$ref;
-$download=getval("download","")!="";
+include_once '../include/resource_functions.php';
+include_once '../include/collections_functions.php';
+include_once '../include/pdf_functions.php';
+
+$resource = get_resource_data($ref);
+
+// fetch the current search (for finding similar matches)
+$search   = getvalescaped('search', '');
+$order_by = getvalescaped('order_by', 'relevance');
+$offset   = getvalescaped('offset', 0, true);
+$restypes = getvalescaped('restypes', '');
+if(strpos($search, '!') !== false)
+    {
+    $restypes='';
+    }
+
+$archive      = getvalescaped('archive', 0, true);
+$starsearch   = getvalescaped('starsearch', '');
+$default_sort_direction = 'DESC';
+if(substr($order_by, 0, 5) == 'field')
+    {
+    $default_sort_direction = 'ASC';
+    }
+
+$sort               = getval('sort', $default_sort_direction);
+$metadata           = get_resource_field_data($ref, false, true, -1, getval('k', '') != ''); 
+$filename           = $ref;
+$download           = getval('download', '') != '';
 $download_file_type = getval('fileType_option', '');
-$language = getval('language', 'en');
+$language           = getval('language', 'en');
+if($language=="en-US"){$language="en";} //html2pdf doesn't use 'en-US' 
+
+$data_only          = 'true' === trim(getval('data_only', ''));
+$pdf_template       = getvalescaped('pdf_template', '');
 
 // Process text file download
 if ($download && $download_file_type == 'text')
@@ -130,13 +151,46 @@ if($download && $download_file_type === 'pdf') {
 	$html2pdf->WriteHTML($content);
 	$html2pdf->Output($PDF_filename);
 }
-	
+
+/*
+Data only PDFs generation
+These PDFs will be based on templates found on the server which will be interpreted and then rendered
+*/
+if($download && $data_only)
+    {
+    $pdf_template_path = get_pdf_template_path($resource['resource_type'], $pdf_template);
+    $PDF_filename      = 'data_only_resource_' . $ref . '.pdf';
+
+    // Go through fields and decide which ones we add to the template
+    $placeholders = array(
+        'resource_type_name' => get_resource_type_name($resource['resource_type'])
+    );
+    foreach($metadata as $metadata_field)
+        {
+        $metadata_field_value = trim(tidylist(i18n_get_translated($metadata_field['value'])));
+
+        // Skip if empty
+        if('' == $metadata_field_value)
+            {
+            continue;
+            }
+
+        $placeholders['metadatafield-' . $metadata_field['ref'] . ':title'] = $metadata_field['title'];
+        $placeholders['metadatafield-' . $metadata_field['ref'] . ':value'] = $metadata_field_value;
+        }
+
+    if(!generate_pdf($pdf_template_path, $PDF_filename, $placeholders))
+        {
+        trigger_error('ResourceSpace could not generate PDF for data only type!');
+        }
+    }
+
 include "../include/header.php";
 ?>
 
 <body>
 	<div class="BasicsBox">
-	<p><a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo urlencode($ref); ?>&search=<?php echo urlencode($search); ?>&offset=<?php echo urlencode($offset); ?>&order_by=<?php echo urlencode($order_by); ?>&sort=<?php echo urlencode($sort); ?>&archive=<?php echo urlencode($archive); ?>"  onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["backtoresourceview"]; ?></a></p>
+	<p><a href="<?php echo $baseurl_short; ?>pages/view.php?ref=<?php echo urlencode($ref); ?>&search=<?php echo urlencode($search); ?>&offset=<?php echo urlencode($offset); ?>&order_by=<?php echo urlencode($order_by); ?>&sort=<?php echo urlencode($sort); ?>&archive=<?php echo urlencode($archive); ?>"  onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]; ?></a></p>
 
 	<h1><?php echo $lang["downloadingmetadata"]?></h1>
 

@@ -6,11 +6,11 @@
 include_once 'node_functions.php';
 
 if (!function_exists("do_search")) {
-function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchrows=-1,$sort="desc",$access_override=false,$starsearch=0,$ignore_filters=false,$return_disk_usage=false,$recent_search_daylimit="", $go=false, $stats_logging=true)
+function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchrows=-1,$sort="desc",$access_override=false,$starsearch=0,$ignore_filters=false,$return_disk_usage=false,$recent_search_daylimit="", $go=false, $stats_logging=true, $return_refs_only=false)
     {
     debug("search=$search $go $fetchrows restypes=$restypes archive=$archive daylimit=$recent_search_daylimit");
-    
-    # globals needed for hooks   
+
+    # globals needed for hooks
     global $sql,$order,$select,$sql_join,$sql_filter,$orig_order,$collections_omit_archived,$search_sql_double_pass_mode,$usergroup,$search_filter_strict,$default_sort,$superaggregationflag;
 
 	$superaggregation = isset($superaggregationflag) && $superaggregationflag===true ? ' WITH ROLLUP' : '';
@@ -62,8 +62,24 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
     $quoted_string=false;
     if (substr($search,0,1)=="\"" && substr($search,-1,1)=="\"") {$quoted_string=true;$search=substr($search,1,-1);}
 
-    $order_by=$order[$order_by];
-    $keywords=split_keywords($search);
+    $order_by=isset($order[$order_by]) ? $order[$order_by] : $order['relevance'];       // fail safe by falling back to default if not found
+
+    # Extract search parameters and split to keywords.
+    $search_params=$search;
+    if (substr($search,0,1)=="!" && substr($search,0,6)!="!empty")
+        {
+        # Special search, discard the special search identifier when splitting keywords and extract the search paramaters
+        $s=strpos($search," ");
+        if ($s===false)
+            {
+            $search_params=""; # No search specified
+            }
+        else
+            {
+            $search_params=substr($search,$s+1); # Extract search params            
+            }
+        }
+    $keywords=split_keywords($search_params);
 
     foreach (get_indexed_resource_type_fields() as $resource_type_field)
         {
@@ -136,8 +152,8 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
         $select.=",null group_access, null user_access ";
         }
     
-    # add 'joins' to select (adding them 
-    $joins=get_resource_table_joins();
+    # add 'joins' to select (only add fields if not returning the refs only)
+    $joins=$return_refs_only===false ? get_resource_table_joins() : array();
     foreach( $joins as $datajoin)
         {
         $select.=",r.field".$datajoin." ";
@@ -163,17 +179,26 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
     # Fetch a list of fields that are not available to the user - these must be omitted from the search.
     $hidden_indexed_fields=get_hidden_indexed_fields();
 
-	# This is a performance enhancement that will discard any keyword matches for fields that are not supposed to be indexed.
-	$sql_restrict_by_field_types="";
-	global $search_sql_force_field_index_check;
-	if (isset($search_sql_force_field_index_check) && $search_sql_force_field_index_check && $restypes!="")
-		{
-		$sql_restrict_by_field_types = sql_value("select group_concat(ref) as value from resource_type_field where keywords_index=1 and resource_type in ({$restypes})","");
-		if ($sql_restrict_by_field_types != "")
-			{
-			$sql_restrict_by_field_types = "-1," . $sql_restrict_by_field_types;  // -1 needed for global search
-			}
-		}
+    // This is a performance enhancement that will discard any keyword matches for fields that are not supposed to be indexed.
+    $sql_restrict_by_field_types = '';
+    global $search_sql_force_field_index_check;
+    if(isset($search_sql_force_field_index_check) && $search_sql_force_field_index_check && '' != $restypes)
+        {
+        if('Global' == substr($restypes, 0, 6))
+            {
+            // remove "Global," from the list
+            $restypes = substr($restypes, 7);
+            }
+
+        // 0 is for global fields which need to be added here as well
+        $sql_restrict_by_field_types = sql_value("SELECT group_concat(ref) AS `value` FROM resource_type_field WHERE keywords_index = 1 AND resource_type IN (0, {$restypes})", '');
+
+        if('' != $sql_restrict_by_field_types)
+            {
+            // -1 needed for global search
+            $sql_restrict_by_field_types = '-1,' . $sql_restrict_by_field_types;
+            }
+        }
 
     if ($keysearch)
         {
@@ -220,10 +245,15 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
                         if ($sql_filter!="") {$sql_filter.=" and ";}
                         $sql_filter.="r.field$date_field like '____-" . $kw[1] . "%' ";
                         }
-                    elseif ($kw[0]=="year")
+                    else if('year' == $kw[0])
                         {
-                        if ($sql_filter!="") {$sql_filter.=" and ";}
-                        $sql_filter.="r.field$date_field like '" . $kw[1] . "%' ";
+                        if('' != $sql_filter)
+                            {
+                            $sql_filter .= ' AND ';
+                            }
+                        $sql_filter.= "rd{$c}.resource_type_field = {$date_field} AND rd{$c}.value LIKE '{$kw[1]}%' ";
+
+                        $sql_join .= " INNER JOIN resource_data rd{$c} ON rd{$c}.resource = r.ref AND rd{$c}.resource_type_field = '{$date_field}'";
                         }
                     elseif ($kw[0]=="startdate")
                         {
@@ -244,9 +274,11 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
                         $rangestring=substr($kw[1],5);
                         if (strpos($rangestring,"start")!==FALSE )
                             {
-                            $rangestart=str_replace(" ","-",$rangestring);
+                            $rangestartpos=strpos($rangestring,"start")+5;
+                            $rangestart=str_replace(" ","-",substr($rangestring,$rangestartpos,strpos($rangestring,"end")?strpos($rangestring,"end")-$rangestartpos:10));
+                                                        
                             if ($sql_filter!="") {$sql_filter.=" and ";}
-                            $sql_filter.="rd" . $c . ".value >= '" . substr($rangestart,strpos($rangestart,"start")+5,10) . "'";
+                            $sql_filter.="rd" . $c . ".value >= '" . $rangestart . "'";
                             }
                         if (strpos($kw[1],"end")!==FALSE )
                             {
@@ -258,7 +290,7 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
                         }
                     elseif (!hook('customsearchkeywordfilter', null, array($kw)))
                         {
-                        $ckeywords=explode(";",$kw[1]);
+
 
                         # Fetch field info
                         global $fieldinfo_cache;
@@ -268,9 +300,20 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
                             $fieldinfo=sql_query("select ref,type from resource_type_field where name='" . escape_check($kw[0]) . "'",0);
                             $fieldinfo_cache[$kw[0]]=$fieldinfo;
                         }
-                        if (count($fieldinfo)==0)
+
+                        if(0 === count($fieldinfo))
                             {
-                            debug("Field short name not found.");return false;
+                            debug('Field short name not found.');
+                            return false;
+                            }
+
+                        if ($fieldinfo[0]["type"] == 7)
+                            {
+                            $ckeywords=preg_split('/[\|;]/',$kw[1]);
+                            }
+                        else
+                            {
+                            $ckeywords=explode(";",$kw[1]);
                             }
                         
                         # Create an array of matching field IDs.
@@ -296,8 +339,15 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
                         if ($fieldinfo[0]["type"] == 7 && $category_tree_search_use_and)
                             {
                             for ($m=0;$m<count($ckeywords);$m++) {
+
+                                // node implementation will eventually replace this fix
+                                if (trim($ckeywords[$m])=='')
+                                    {
+                                    continue;
+                                    }
+
                                 $keyref=resolve_keyword($ckeywords[$m]);
-                                if (!($keyref===false)) 
+                                if (!($keyref===false))
                                     {
                                     $c++;
 
@@ -730,12 +780,11 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
         {
         $sql_join=" join collection_resource jcr on jcr.resource=r.ref join collection jc on jcr.collection=jc.ref and length(jc.theme)>0 " . $sql_join;
         }
-     
-        
+ 	   
     # --------------------------------------------------------------------------------
     # Special Searches (start with an exclamation mark)
     # --------------------------------------------------------------------------------
-    $special_results=search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$order_by,$orig_order,$select,$sql_filter,$archive,$return_disk_usage);
+    $special_results=search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$order_by,$orig_order,$select,$sql_filter,$archive,$return_disk_usage,$return_refs_only);
     if ($special_results!==false) {return $special_results;}
 
     # -------------------------------------------------------------------------------------
@@ -770,8 +819,21 @@ function do_search($search,$restypes="",$order_by="relevance",$archive=0,$fetchr
     # Debug
     debug('$results_sql=' . $results_sql);
 
-    # Execute query
-    $result=sql_query($results_sql,false,$fetchrows);
+    if($return_refs_only)
+        {
+        # Execute query but only ask for ref columns back from mysql_query();
+        # We force verbatim query mode on (and restore it afterwards) as there is no point trying to strip slashes etc. just for a ref column
+        global $mysql_verbatim_queries;
+        $mysql_vq=$mysql_verbatim_queries;
+        $mysql_verbatim_queries=true;
+        $result=sql_query($results_sql,false,$fetchrows,true,2,true,array('ref'));
+        $mysql_verbatim_queries=$mysql_vq;
+        }
+    else
+        {
+        # Execute query as normal
+        $result=sql_query($results_sql,false,$fetchrows);
+        }
 
     # Performance improvement - perform a second count-only query and pad the result array as necessary
     if ($search_sql_double_pass_mode && count($result)>=$max_results)
@@ -897,591 +959,7 @@ function get_advanced_search_collection_fields($archive=false, $hiddenfields="")
     
     return $return;
     }
-function render_search_field($field,$value="",$autoupdate,$class="stdwidth",$forsearchbar=false,$limit_keywords=array())
-    {
-    # Renders the HTML for the provided $field for inclusion in a search form, for example the
-    # advanced search page. Standard field titles are translated using $lang.  Custom field titles are i18n translated.
-    #
-    # $field    an associative array of field data, i.e. a row from the resource_type_field table.
-    # $name     the input name to use in the form (post name)
-    # $value    the default value to set for this field, if any
 
-    node_field_options_override($field);
-    
-    global $auto_order_checkbox,$auto_order_checkbox_case_insensitive,$lang,$category_tree_open,$minyear,$daterange_search,$is_search,$values,$n;
-    $name="field_" . $field["ref"];
-    
-    #Check if field has a display condition set
-    $displaycondition=true;
-    if ($field["display_condition"]!="")
-        {
-        $s=explode(";",$field["display_condition"]);
-        $condref=0;
-        foreach ($s as $condition) # Check each condition
-            {
-            $displayconditioncheck=false;
-            $s=explode("=",$condition);
-            global $fields;
-            for ($cf=0;$cf<count($fields);$cf++) # Check each field to see if needs to be checked
-                {
-                if ($s[0]==$fields[$cf]["name"] && ($fields[$cf]["resource_type"]==0 || $fields[$cf]["resource_type"]==$field["resource_type"])) # this field needs to be checked
-                    {
-                    $scriptconditions[$condref]["field"] = $fields[$cf]["ref"];  # add new jQuery code to check value
-                    $scriptconditions[$condref]['type'] = $fields[$cf]['type'];
-
-                    //$scriptconditions[$condref]['options'] = $fields[$cf]['options'];
-
-                    $scriptconditions[$condref]['node_options'] = array();
-                    node_field_options_override($scriptconditions[$condref]['node_options'],$fields[$cf]['ref']);
-
-                    $checkvalues=$s[1];
-                    $validvalues=explode("|",strtoupper($checkvalues));
-                    $scriptconditions[$condref]["valid"]= "\"";
-                    $scriptconditions[$condref]["valid"].= implode("\",\"",$validvalues);
-                    $scriptconditions[$condref]["valid"].= "\"";
-                    if(isset($values[$fields[$cf]["name"]])) // Check if there is a matching value passed from search
-                        {
-                        $v=trim_array(explode(" ",strtoupper($values[$fields[$cf]["name"]])));
-                        foreach ($validvalues as $validvalue)
-                            {
-                            if (in_array($validvalue,$v)) {$displayconditioncheck=true;} # this is  a valid value
-                            }
-                        }
-                    if (!$displayconditioncheck) {$displaycondition=false;}
-                    #add jQuery code to update on changes
-                        if (($fields[$cf]['type'] == 2 || $fields[$cf]['type'] == 3) && $fields[$cf]['display_as_dropdown'] == 0) # add onchange event to each checkbox field
-                            {
-                            # construct the value from the ticked boxes
-                            $val=","; # Note: it seems wrong to start with a comma, but this ensures it is treated as a comma separated list by split_keywords(), so if just one item is selected it still does individual word adding, so 'South Asia' is split to 'South Asia','South','Asia'.
-                            //$options=trim_array(explode(",",$fields[$cf]["options"]));
-
-                            $options=array();
-                            node_field_options_override($options,$fields[$cf]['ref']);
-
-                            ?><script type="text/javascript">
-                            jQuery(document).ready(function() {<?php
-                                for ($m=0;$m<count($options);$m++)
-                                    {
-                                    $checkname=$fields[$cf]["ref"] . "_" . md5($options[$m]);
-                                    echo "
-                                    jQuery('input[name=\"" . $checkname . "\"]').change(function (){
-                                        checkDisplayCondition" . $field["ref"] . "();
-                                        });";
-                                    }
-                                    ?>
-                                });
-                            </script><?php
-                            }
-                        # Handle Radio Buttons type:
-                        else if($fields[$cf]['type'] == 12 && $fields[$cf]['display_as_dropdown'] == 0) {
-                        ?>
-                            <script type="text/javascript">
-                            jQuery(document).ready(function() {
-                                // Check for radio buttons (default behaviour)
-                                jQuery('input[name=field_<?php echo $fields[$cf]["ref"]; ?>]:radio').change(function() {
-                                    checkDisplayCondition<?php echo $field["ref"];?>();
-                                });
-
-                                <?php
-
-                                $options=array();
-                                node_field_options_override($options,$fields[$cf]['ref']);
-
-                                //$options = trim_array(explode(',', ['options']));
-
-                                foreach ($options as $option) {
-                                    $name = 'field_' . $fields[$cf]['ref'] . '_' . sha1($option); ?>
-                                    
-                                    // Check for checkboxes (advanced search behaviour)
-                                    jQuery('input[name=<?php echo $name; ?>]:checkbox').change(function() {
-                                        checkDisplayCondition<?php echo $field['ref']; ?>();
-                                    });
-
-                                <?php
-                                }
-                                ?>
-                            });
-                            </script>
-
-                        <?php 
-                        } 
-                        else
-                            {
-                            ?>
-                            <script type="text/javascript">
-                            jQuery(document).ready(function() {
-                                jQuery('#field_<?php echo $fields[$cf]["ref"];?>').change(function (){
-                                checkDisplayCondition<?php echo $field["ref"];?>();
-                                });
-                            });
-                            </script>
-                        <?php
-                            }
-                    }
-                } # see if next field needs to be checked
-
-            $condref++;
-            } # check next condition
-
-        ?>
-        <script type="text/javascript">
-        function checkDisplayCondition<?php echo $field["ref"];?>() {
-            var questionField          = jQuery('#question_<?php echo $n; ?>');
-            var fieldStatus            = questionField.css('display');
-            var newFieldStatus         = 'none';
-            var newFieldProvisional    = true;
-            var newFieldProvisionalTest;
-            <?php
-            foreach ($scriptconditions as $scriptcondition)
-                { ?>
-
-                newFieldProvisionalTest = false;
-
-                if (jQuery('#field_<?php echo $scriptcondition["field"]; ?>').length != 0) {
-                    fieldValues<?php echo $scriptcondition["field"]; ?> = jQuery('#field_<?php echo $scriptcondition["field"]; ?>').val().toUpperCase().split(',');
-                } else {
-                <?php
-                    # Handle Radio Buttons type:
-                    if($scriptcondition['type'] == 12) 
-                        {
-                        //$scriptcondition["options"] = explode(',', $scriptcondition["options"]);
-
-                        $scriptcondition["options"]=array();
-                        node_field_options_override($scriptcondition["options"],$scriptcondition["field"]);
-
-                        foreach ($scriptcondition["options"] as $key => $radio_button_value)
-                            {
-                            $scriptcondition["options"][$key] = sha1($radio_button_value);
-                            }
-                        $scriptcondition["options"] = implode(',', $scriptcondition["options"]);
-
-                        ?>
-
-                        var options_string = '<?php echo $scriptcondition["options"]; ?>';
-                        var field<?php echo $scriptcondition["field"]; ?>_options = options_string.split(',');
-                        var checked = null;
-                        var fieldOkValues<?php echo $scriptcondition["field"]; ?> = [<?php echo $scriptcondition["valid"]; ?>];
-
-                        for(var i=0; i < field<?php echo $scriptcondition["field"]; ?>_options.length; i++) {
-                            if(jQuery('#field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i]).is(':checked')) {
-                                checked = jQuery('#field_<?php echo $scriptcondition["field"]; ?>_' + field<?php echo $scriptcondition["field"]; ?>_options[i] + ':checked').val().toUpperCase();
-                                if(jQuery.inArray(checked, fieldOkValues<?php echo $scriptcondition["field"]; ?>) > -1) {
-                                    newFieldProvisionalTest = true;
-                                }
-                            }
-                        }
-
-                        <?php
-                        } # end of handling radio buttons type
-                        ?>
-
-                    fieldValues<?php echo $scriptcondition["field"]; ?> = new Array();
-                    checkedVals<?php echo $scriptcondition["field"]; ?> = jQuery('input[name^=<?php echo $scriptcondition["field"]; ?>_]');
-                
-                    jQuery.each(checkedVals<?php echo $scriptcondition["field"]; ?>, function() {
-                        if (jQuery(this).is(':checked')) {
-                            checkText<?php echo $scriptcondition["field"]; ?> = jQuery(this).parent().next().text().toUpperCase();
-                            fieldValues<?php echo $scriptcondition["field"]; ?>.push(jQuery.trim(checkText<?php echo $scriptcondition["field"]; ?>));
-                        }
-                    });
-                }
-                    
-                fieldOkValues<?php echo $scriptcondition["field"]; ?> = [<?php echo $scriptcondition["valid"]; ?>];
-                jQuery.each(fieldValues<?php echo $scriptcondition["field"]; ?>,function(f,v) {
-                    if ((jQuery.inArray(v,fieldOkValues<?php echo $scriptcondition["field"]; ?>))>-1 || (fieldValues<?php echo $scriptcondition["field"]; ?> == fieldOkValues<?php echo $scriptcondition["field"]; ?> )) {
-                        newFieldProvisionalTest = true;
-                    }
-                });
-
-                if (newFieldProvisionalTest == false) {
-                    newFieldProvisional = false;
-                }
-                    
-                <?php
-                } ?>
-            
-            if (newFieldProvisional == true) {
-                newFieldStatus = 'block'
-            }
-            if (newFieldStatus != fieldStatus) {
-                questionField.slideToggle();
-                if (questionField.css('display') == 'block') {
-                    questionField.css('border-top','');
-                } else {
-                    questionField.css('border-top','none');
-                }
-            }
-        }
-        </script>
-    <?php
-        }
-
-    $is_search = true;
-
-    if (!$forsearchbar)
-        {
-        ?>
-        <div class="Question" id="question_<?php echo $n ?>" <?php if (!$displaycondition) {?>style="display:none;border-top:none;"<?php } ?><?php
-        if (strlen($field["tooltip_text"])>=1)
-            {
-            echo "title=\"" . htmlspecialchars(lang_or_i18n_get_translated($field["tooltip_text"], "fieldtooltip-")) . "\"";
-            }
-        ?>>
-        <label><?php echo htmlspecialchars(lang_or_i18n_get_translated($field["title"], "fieldtitle-")) ?></label>
-        <?php
-        }
-    else
-        {
-        ?>
-        <div class="SearchItem">
-        <?php echo htmlspecialchars(lang_or_i18n_get_translated($field["title"], "fieldtitle-")) ?></br>
-        <?php
-        }
-
-    //hook("rendersearchhtml", "", array($field, $class, $value, $autoupdate));
-
-    switch ($field["type"]) {
-        case 0: # -------- Text boxes
-        case 1:
-        case 5:
-        case 8:
-        ?><input class="<?php echo $class ?>" type=text name="field_<?php echo $field["ref"]?>" id="field_<?php echo $field["ref"]?>" value="<?php echo htmlspecialchars($value)?>" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?> onKeyPress="if (!(updating)) {setTimeout('UpdateResultCount()',2000);updating=true;}"><?php
-        break;
-    
-        case 2: 
-        case 3:
-        if(!hook("customchkboxes", "", array($field, $value, $autoupdate, $class, $forsearchbar, $limit_keywords)))
-            {
-            # -------- Show a check list or dropdown for dropdowns and check lists?
-            # By default show a checkbox list for both (for multiple selections this enabled OR functionality)
-            
-            # Translate all options
-            $adjusted_dropdownoptions=hook("adjustdropdownoptions");
-            if ($adjusted_dropdownoptions){$options=$adjusted_dropdownoptions;}
-            
-            $option_trans=array();
-            $option_trans_simple=array();
-            for ($m=0;$m<count($field["node_options"]);$m++)
-                {
-                $trans=i18n_get_translated($field["node_options"][$m]);
-                $option_trans[$field["node_options"][$m]]=$trans;
-                $option_trans_simple[]=$trans;
-                }
-
-            if ($auto_order_checkbox && !hook("ajust_auto_order_checkbox","",array($field))) {
-                if($auto_order_checkbox_case_insensitive){natcasesort($option_trans);}
-                else{asort($option_trans);}
-            }
-            $options=array_keys($option_trans); # Set the options array to the keys, so it is now effectively sorted by translated string       
-            
-            if ($field["display_as_dropdown"])
-                {
-                # Show as a dropdown box
-                $set=trim_array(explode(";",cleanse_string($value,true)));
-                ?><select class="<?php echo $class ?>" name="field_<?php echo $field["ref"]?>" id="field_<?php echo $field["ref"]?>" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>><option value=""></option><?php
-                foreach ($option_trans as $option=>$trans)
-                    {
-                    if (trim($trans)!="")
-                        {
-                        ?>
-                        <option value="<?php echo htmlspecialchars(trim($trans))?>" <?php if (in_array(cleanse_string($trans,true),$set)) {?>selected<?php } ?>><?php echo htmlspecialchars(trim($trans))?></option>
-                        <?php
-                        }
-                    }
-                ?></select><?php
-                }
-            else
-                {
-                # Show as a checkbox list (default)
-                
-                $set=trim_array(explode(";",cleanse_string($value,true)));
-                $wrap=0;
-
-                $l=average_length($option_trans_simple);
-                $cols=10;
-                if ($l>5)  {$cols=6;}
-                if ($l>10) {$cols=4;}
-                if ($l>15) {$cols=3;}
-                if ($l>25) {$cols=2;}
-                # Filter the options array for blank values and ignored keywords.
-                $newoptions=array();
-                foreach ($options as $option)
-                    {
-                    if ($option!=="" && (count($limit_keywords)==0 || in_array(strval($option,$limit_keywords))))
-                        {
-                        $newoptions[]=$option;
-                        }
-                    }
-					
-                $options=$newoptions;
-				
-                $height=ceil(count($options)/$cols);
-
-                global $checkbox_ordered_vertically, $checkbox_vertical_columns;
-                if ($checkbox_ordered_vertically)
-                    {                   
-                    if(!hook('rendersearchchkboxes'))
-                        {
-                        # ---------------- Vertical Ordering (only if configured) -----------
-                        ?><table cellpadding=2 cellspacing=0><tr><?php
-                        for ($y=0;$y<$height;$y++)
-                            {
-                            for ($x=0;$x<$cols;$x++)
-                                {
-                                # Work out which option to fetch.
-                                $o=($x*$height)+$y;
-                                if ($o<count($options))
-                                    {
-                                    $option=$options[$o];
-                                    $trans=$option_trans[$option];
-
-                                    $name=$field["ref"] . "_" . md5($option);
-                                    if ($option!=="")
-                                        {
-                                        ?>
-                                        <td valign=middle><input type=checkbox id="<?php echo htmlspecialchars($name) ?>" name="<?php echo ($name) ?>" value="yes" <?php if (in_array(cleanse_string($trans,true),$set)) {?>checked<?php } ?> <?php if ($autoupdate) { ?>onClick="UpdateResultCount();"<?php } ?>></td><td valign=middle><?php echo htmlspecialchars($trans)?>&nbsp;&nbsp;</td>
-
-                                        <?php
-                                        }
-                                    else
-                                        {
-                                        ?><td></td><td></td><?php
-                                        }
-                                    }
-                                }?></tr><tr><?php
-                            }
-                        ?></tr></table><?php
-                        }
-                    }
-                else
-                    {
-                    # ---------------- Horizontal Ordering (Standard) ---------------------             
-                    ?><table cellpadding=2 cellspacing=0><tr><?php
-                    foreach ($option_trans as $option=>$trans)
-                        {
-                        $wrap++;if ($wrap>$cols) {$wrap=1;?></tr><tr><?php }
-                        $name=$field["ref"] . "_" . md5($option);
-                        if ($option!=="")
-                            {
-                            ?>
-                            <td valign=middle><input type=checkbox id="<?php echo htmlspecialchars($name) ?>" name="<?php echo htmlspecialchars($name) ?>" value="yes" <?php if (in_array(cleanse_string(i18n_get_translated($option),true),$set)) {?>checked<?php } ?> <?php if ($autoupdate) { ?>onClick="UpdateResultCount();"<?php } ?>></td><td valign=middle><?php echo htmlspecialchars($trans)?>&nbsp;&nbsp;</td>
-                            <?php
-                            }
-                        }
-                    ?></tr></table><?php
-                    }
-                    
-                }
-            }
-        break;
-        
-        case 4:
-        case 6: 
-        case 10: # ----- Date types
-        $found_year='';$found_month='';$found_day='';$found_start_year='';$found_start_month='';$found_start_day='';$found_end_year='';$found_end_month='';$found_end_day='';
-        if ($daterange_search)
-            {
-            $startvalue=substr($value,strpos($value,"start")+5,10);
-            $ss=explode(" ",$startvalue);
-            if (count($ss)>=3)
-                {
-                $found_start_year=$ss[0];
-                $found_start_month=$ss[1];
-                $found_start_day=$ss[2];
-                }
-            $endvalue=substr($value,strpos($value,"end")+3,10);
-            $se=explode(" ",$endvalue);
-            if (count($se)>=3)
-                {
-                $found_end_year=$se[0];
-                $found_end_month=$se[1];
-                $found_end_day=$se[2];
-                }
-            ?>
-            <!--  date range search start -->           
-            <div><label class="InnerLabel"><?php echo $lang["fromdate"]?></label>
-            <select name="<?php echo htmlspecialchars($name) ?>_startyear" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyyear"]?></option>
-              <?php
-              $y=date("Y");
-              for ($d=$y;$d>=$minyear;$d--)
-                {
-                ?><option <?php if ($d==$found_start_year) { ?>selected<?php } ?>><?php echo $d?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_startmonth" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anymonth"]?></option>
-              <?php
-              for ($d=1;$d<=12;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_start_month) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $lang["months"][$d-1]?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_startday" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyday"]?></option>
-              <?php
-              for ($d=1;$d<=31;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_start_day) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $m?></option><?php
-                }
-              ?>
-            </select>   
-            </div><br><div><label></label><label class="InnerLabel"><?php echo $lang["todate"]?></label><select name="<?php echo $name?>_endyear" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyyear"]?></option>
-              <?php
-              $y=date("Y");
-              for ($d=$y;$d>=$minyear;$d--)
-                {
-                ?><option <?php if ($d==$found_end_year ) { ?>selected<?php } ?>><?php echo $d?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_endmonth" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anymonth"]?></option>
-              <?php
-              $md=date("n");
-              for ($d=1;$d<=12;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_end_month) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $lang["months"][$d-1]?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_endday" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyday"]?></option>
-              <?php
-              $td=date("d");
-              for ($d=1;$d<=31;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_end_day) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $m?></option><?php
-                }
-              ?>
-            </select>
-            <!--  date range search end date-->         
-            </div>
-            <?php }
-        else
-            {
-            $s=explode("|",$value);
-            if (count($s)>=3)
-            {
-            $found_year=$s[0];
-            $found_month=$s[1];
-            $found_day=$s[2];
-            }
-            ?>      
-            <select name="<?php echo $name?>_year" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyyear"]?></option>
-              <?php
-              $y=date("Y");
-              for ($d=$minyear;$d<=$y;$d++)
-                {
-                ?><option <?php if ($d==$found_year) { ?>selected<?php } ?>><?php echo $d?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_month" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anymonth"]?></option>
-              <?php
-              for ($d=1;$d<=12;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_month) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $lang["months"][$d-1]?></option><?php
-                }
-              ?>
-            </select>
-            <select name="<?php echo $name?>_day" class="SearchWidth" style="width:100px;" <?php if ($autoupdate) { ?>onChange="UpdateResultCount();"<?php } ?>>
-              <option value=""><?php echo $lang["anyday"]?></option>
-              <?php
-              for ($d=1;$d<=31;$d++)
-                {
-                $m=str_pad($d,2,"0",STR_PAD_LEFT);
-                ?><option <?php if ($d==$found_day) { ?>selected<?php } ?> value="<?php echo $m?>"><?php echo $m?></option><?php
-                }
-              ?>
-            </select>
-            <?php }
-                    
-        break;
-        
-        
-        case 7: # ----- Category Tree
-        $options=$field["options"];
-        $set=trim_array(explode(";",cleanse_string($value,true)));
-        if ($forsearchbar)
-            {
-            # On the search bar?
-            # Produce a smaller version of the category tree in a single dropdown - max two levels
-            ?>
-            <select class="<?php echo $class ?>" name="field_<?php echo $field["ref"]?>"><option value=""></option><?php
-            $class=explode("\n",$options);
-
-            for ($t=0;$t<count($class);$t++)
-                {
-                $s=explode(",",$class[$t]);
-                if (count($s)==3 && $s[1]==0)
-                    {
-                    # Found a first level
-                    ?>
-                    <option <?php if (in_array(cleanse_string($s[2],true),$set)) {?>selected<?php } ?>><?php echo htmlspecialchars($s[2]) ?></option>
-                    <?php
-                    
-                    # Parse tree again looking for level twos at this point
-                    for ($u=0;$u<count($class);$u++)
-                        {
-                        $v=explode(",",$class[$u]);
-                        if (count($v)==3 && $v[1]==$s[0])
-                            {
-                            # Found a first level
-                            ?>
-                            <option value="<?php echo htmlspecialchars($s[2]) . "," . htmlspecialchars($v[2]) ?>" <?php if (in_array(cleanse_string($s[2],true),$set) && in_array(cleanse_string($v[2],true),$set)) {?>selected<?php } ?>>&nbsp;-&nbsp;<?php echo htmlspecialchars($v[2]) ?></option>
-                            <?php
-                            }                       
-                        }
-                    }
-                }           
-            ?>
-            </select>
-            <?php
-            }
-        else
-            {
-            # For advanced search and elsewhere, include the category tree.
-            include "../pages/edit_fields/7.php";
-            }
-        break;
-        
-        case 9: #-- Dynamic keywords list
-        $value=str_replace(";",",",$value); # Different syntax used for keyword separation when searching.
-        include "../pages/edit_fields/9.php";
-        break;      
-
-        // Radio buttons:
-        case 12:
-            // auto save is not needed when searching
-            $edit_autosave = FALSE;
-             
-            $display_as_radiobuttons = FALSE;
-            $display_as_checkbox = TRUE;
-
-            if($field['display_as_dropdown']) {
-                $display_as_dropdown = TRUE;
-                $display_as_checkbox = FALSE;
-            }
-            
-            include '../pages/edit_fields/12.php';
-        break;
-        }
-    ?>
-    <div class="clearerleft"> </div>
-    </div>
-    <?php
-    }
 
 function search_form_to_search_query($fields,$fromsearchbar=false)
     {
@@ -1708,12 +1186,12 @@ function search_form_to_search_query($fields,$fromsearchbar=false)
                         }
                     else
                         {
-                        $datepart.="-01";
+                        $datepart.="";
                         }
                     }
                 else
                     {
-                    $datepart.="-01-01";
+                    $datepart.="";
                     }
                 }           
                 
@@ -1747,8 +1225,7 @@ function search_form_to_search_query($fields,$fromsearchbar=false)
 
             break;
 
-            case 7: 
-            case 9: # -------- Category tree and dynamic keywords
+            case 7:  # -------- Category tree
             $name="field_" . $fields[$n]["ref"];
             $value=getvalescaped($name,"");
             $selected=trim_array(explode(",",$value));
@@ -1771,7 +1248,31 @@ function search_form_to_search_query($fields,$fromsearchbar=false)
                 $search.=$fields[$n]["name"] . ":" . $p;
                 }
             break;
+        
+            case 9: # -------- Dynamic keywords
+            $name="field_" . $fields[$n]["ref"];
+            $value=getvalescaped($name,"");
+            $selected=trim_array(explode("|",$value));
+            $p="";
+            for ($m=0;$m<count($selected);$m++)
+                {
+                if ($selected[$m]!="")
+                    {
+                    if ($p!="") {$p.=";";}
+                    $p.=$selected[$m];
+                    }
 
+                # Resolve keywords to make sure that the value has been indexed prior to including in the search string.
+                $keywords=split_keywords($selected[$m]);
+                foreach ($keywords as $keyword) {resolve_keyword($keyword,true);}
+                }
+            if ($p!="")
+                {
+                if ($search!="") {$search.=", ";}
+                $search.=$fields[$n]["name"] . ":" . $p;
+                }
+            break;
+        
             // Radio buttons:
             case 12:
                 if($fields[$n]['display_as_dropdown']) {
@@ -1829,7 +1330,33 @@ function search_form_to_search_query($fields,$fromsearchbar=false)
             break;
             }
         }
-    return $search;
+		
+        $propertysearchcodes=array();
+        global $advanced_search_properties;
+        foreach($advanced_search_properties as $advanced_search_property=>$code)
+            {
+            $propval=getvalescaped($advanced_search_property,"");
+            if($propval!="")
+                {$propertysearchcodes[] =$code . ":" . $propval;}
+            }
+        if(count($propertysearchcodes)>0)
+            {
+            $search = '!properties' . implode(';', $propertysearchcodes) . ' ' . $search;
+            }
+        else
+            {
+            // Allow a single special search to be prepended to the search string.  For example, !contributions<user id>
+            foreach ($_POST as $key=>$value)
+                {
+                if ($key[0]=='!' && strlen($value) > 0)
+                    {
+                    $search=$key . $value . ',' . $search;
+                    //break;
+                    }
+                }
+            }
+            
+        return $search;
     }
 
 if (!function_exists("refine_searchstring")){
@@ -1903,12 +1430,15 @@ function compile_search_actions($top_actions)
 
     global $baseurl_short, $lang, $k, $search, $restypes, $order_by, $archive, $sort, $daylimit, $home_dash, $url,
            $allow_smart_collections, $resources_count, $show_searchitemsdiskusage, $offset, $allow_save_search,
-           $collection, $usercollection;
+           $collection, $usercollection, $internal_share_access;
+
+	if(!isset($internal_share_access)){$internal_share_access=false;}
+	
 
     // globals that could also be passed as a reference
     global $starsearch;
 
-    if(!checkperm('b') && $k == '') 
+    if(!checkperm('b') && ($k == '' || $internal_share_access)) 
         {
         if($top_actions && $allow_save_search && $usercollection != $collection)
             {
@@ -1942,10 +1472,12 @@ function compile_search_actions($top_actions)
                 {
                 $option_name = 'save_collection_to_dash';
                 $data_attribute['url'] = sprintf('
-                    %spages/dash_tile.php?create=true&tltype=srch&promoted_resource=true&freetext=true&all_users=1&link=/pages/search.php?search=%s&order_by=relevance&sort=DESC
+                    %spages/dash_tile.php?create=true&tltype=srch&promoted_resource=true&freetext=true&all_users=1&link=/pages/search.php?search=%s&order_by=%s&sort=%s
                     ',
                     $baseurl_short,
-                    $search
+                    $search,
+                    $order_by,
+                    $sort
                 );
                 }
 
@@ -2021,7 +1553,7 @@ function compile_search_actions($top_actions)
     			$o++;
                 }
 
-            if($show_searchitemsdiskusage) 
+            if(0 != $resources_count && $show_searchitemsdiskusage) 
                 {
                 $extra_tag_attributes = sprintf('
                         data-url="%spages/search_disk_usage.php?search=%s&restypes=%s&offset=%s&order_by=%s&sort=%s&archive=%s&daylimit=%s&k=%s"
@@ -2046,7 +1578,7 @@ function compile_search_actions($top_actions)
             }
         }
 
-    if($top_actions && $k == '')
+    if($top_actions && ($k == '' || $internal_share_access))
         {
         $options[$o]['value']            = 'csv_export_results_metadata';
 		$options[$o]['label']            = $lang['csvExportResultsMetadata'];
@@ -2081,7 +1613,7 @@ function search_filter($search,$archive,$restypes,$starsearch,$recent_search_day
 	$sql_filter="";
 	
 	# Apply resource types
-	if (($restypes!="")&&(substr($restypes,0,6)!="Global"))
+	if (($restypes!="")&&(substr($restypes,0,6)!="Global") && substr($search, 0, 11) != '!collection')
 	    {
 	    if ($sql_filter!="") {$sql_filter.=" and ";}
 	    $restypes_x=explode(",",$restypes);
@@ -2167,34 +1699,43 @@ function search_filter($search,$archive,$restypes,$starsearch,$recent_search_day
 	    $sql_filter.="(r.access<>'2' or (r.access=2 and ((rca.access is not null and rca.access<>2) or (rca2.access is not null and rca2.access<>2))))";
 	    }
 	    
-	# append archive searching (don't do this for collections or !listall, archived resources can still appear in these searches)
-	global $collections_omit_archived;
-	if (!$access_override && ((substr($search,0,8)!="!listall" && substr($search,0,11)!="!collection") || ($collections_omit_archived && !checkperm("e2"))))
+	# append archive searching. Updated Jan 2016 to apply to collections as resources in a pending state that are in a shared collection could bypass approval process
+	if (!$access_override)
 	    {
-	    global $pending_review_visible_to_all,$search_all_workflow_states;
-	    if ($search_all_workflow_states)
-		{
-		# Nothing to append, as we're searching all states.
-		hook("search_all_workflow_states_filter");
+	    global $pending_review_visible_to_all,$search_all_workflow_states, $userref, $pending_submission_searchable_to_all;
+	    if(substr($search,0,11)=="!collection" || substr($search,0,5)=="!list")
+			{
+			# Resources in a collection or list may be in any archive state
+			global $collections_omit_archived;
+			if(substr($search,0,11)=="!collection" && $collections_omit_archived && !checkperm("e2"))
+				{
+				$sql_filter.= (($sql_filter!="")?" and ":"") . "archive<>2";
+				}			
+			}
+		elseif ($search_all_workflow_states)
+			{hook("search_all_workflow_states_filter");}   
+		elseif ($archive==0 && $pending_review_visible_to_all)
+            {
+            # If resources pending review are visible to all, when listing only active resources include
+            # pending review (-1) resources too.
+            if ($sql_filter!="") {$sql_filter.=" and ";}
+            $sql_filter.="archive in('0','-1')";
+            } 
+		else
+            {
+            # Append normal filtering - extended as advanced search now allows searching by archive state
+            if ($sql_filter!="") {$sql_filter.=" and ";}
+            $sql_filter.="archive = '$archive'";
+            }
+        global $k, $collection_allow_not_approved_share ;
+        if (!checkperm("v") && !(substr($search,0,11)=="!collection" && $k!='' && $collection_allow_not_approved_share)) 
+            {
+            # Append standard filtering to hide resources in a pending state, whatever the search
+            if (!$pending_submission_searchable_to_all) {$sql_filter.= (($sql_filter!="")?" and ":"") . "(r.archive<>-2 or r.created_by='" . $userref . "')";}
+            if (!$pending_review_visible_to_all){$sql_filter.=(($sql_filter!="")?" and ":"") . "(r.archive<>-1 or r.created_by='" . $userref . "')";}
+            }
 		}
-	    elseif ($archive==0 && $pending_review_visible_to_all)
-		{
-		# If resources pending review are visible to all, when listing only active resources include
-		# pending review (-1) resources too.
-		if ($sql_filter!="") {$sql_filter.=" and ";}
-		$sql_filter.="archive in('0','-1')";
-		}
-	    else
-		{
-		# Append normal filtering - extended as advanced search now allows searching by archive state
-		if ($sql_filter!="") {$sql_filter.=" and ";}
-		$sql_filter.="archive = '$archive'";
-		global $userref, $pending_submission_searchable_to_all;
-		if (!$pending_submission_searchable_to_all&&($archive=="-2")&&!((checkperm("e-2")&&checkperm("t"))||checkperm("v"))) $sql_filter.=" and created_by='" . $userref . "'";                     
-		if (!$pending_review_visible_to_all&&($archive=="-1")&&!((checkperm("e-1")&&checkperm("t"))||checkperm("v"))) $sql_filter.=" and created_by='" . $userref . "'";
-		}
-	    }
-	
+		
 	# Add code to filter out resoures in archive states that the user does not have access to due to a 'z' permission
 	$filterblockstates="";
 	for ($n=-2;$n<=3;$n++)
@@ -2231,14 +1772,25 @@ function search_filter($search,$archive,$restypes,$starsearch,$recent_search_day
 		}
 	    }
 	
+	
+	# Append media restrictions
+	global $heightmin,$heightmax,$widthmin,$widthmax,$filesizemin,$filesizemax,$fileextension,$haspreviewimage;
+	
+	if ($heightmin!='')
+		{		
+		if ($sql_filter!="") {$sql_filter.=" and ";}
+		$sql_filter.= "dim.height>='$heightmin'";
+		}
+		
+		
 	# append ref filter - never return the batch upload template (negative refs)
 	if ($sql_filter!="") {$sql_filter.=" and ";}
 	$sql_filter.="r.ref>0";
-	    
+
 	return $sql_filter;
 	}
 
-function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$order_by,$orig_order,$select,$sql_filter,$archive,$return_disk_usage)
+function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$order_by,$orig_order,$select,$sql_filter,$archive,$return_disk_usage,$return_refs_only=false)
 	{
 	# Process special searches. These return early with results.
 
@@ -2247,9 +1799,16 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
     if (substr($search,0,5)=="!last") 
         {
         # Replace r2.ref with r.ref for the alternative query used here.
-        $order_by=str_replace("r.ref","r2.ref",$order_by);
-        if ($orig_order=="relevance") {$order_by="r2.ref desc";}
 
+        $order_by=str_replace("r.ref","r2.ref",$order_by);
+        if ($orig_order=="relevance")
+            {
+            # Special case for ordering by relevance for this query.
+            $direction=((strpos($order_by,"DESC")===false)?"ASC":"DESC");
+            $order_by="r2.ref " . $direction;
+            }
+       
+        
         # Extract the number of records to produce
         $last=explode(",",$search);
         $last=str_replace("!last","",$last[0]);
@@ -2260,6 +1819,42 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
         $order_by=str_replace("r.rating","rating",$order_by);
                 
         return sql_query($sql_prefix . "select distinct *,r2.hit_count score from (select $select from resource r $sql_join where $sql_filter order by ref desc limit $last ) r2 order by $order_by" . $sql_suffix,false,$fetchrows);
+        }
+    
+     # Collections containing resources
+     # NOTE - this returns collections not resources! Not intended for use in user searches.
+     # This is used when the $collection_search_includes_resource_metadata option is enabled and searches collections based on the contents of the collections.
+    if (substr($search,0,19)=="!contentscollection")
+        {
+        $flags=substr($search,19,((strpos($search," ")!==false)?strpos($search," "):strlen($search)) -19); # Extract User/Public/Theme flags from the beginning of the search parameter.
+    	
+        if ($flags=="") {$flags="TP";} # Sensible default
+
+        # Add collections based on the provided collection type flags.
+        $collection_filter="(";
+        if (strpos($flags,"T")!==false) # Include themes
+            {
+            if ($collection_filter!="(") {$collection_filter.=" or ";}
+            $collection_filter.=" (c.public=1 and (length(c.theme)>0))";
+            }
+	
+	 if (strpos($flags,"P")!==false) # Include public collections
+            {
+            if ($collection_filter!="(") {$collection_filter.=" or ";}
+            $collection_filter.=" (c.public=1 and (length(c.theme)=0 or c.theme is null))";
+            }
+        
+        if (strpos($flags,"U")!==false) # Include the user's own collections
+            {
+            if ($collection_filter!="(") {$collection_filter.=" or ";}
+            global $userref;
+            $collection_filter.=" (c.public=0 and c.user='$userref')";
+            }
+        $collection_filter.=")";
+        
+        # Formulate SQL
+        $sql="select distinct c.* from collection c join resource r $sql_join join collection_resource cr on cr.resource=r.ref and cr.collection=c.ref where $sql_filter and $collection_filter group by c.ref order by $order_by ";#echo $search . " " . $sql;
+        return sql_query($sql);
         }
     
     # View Resources With No Downloads
@@ -2310,7 +1905,8 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
 
         $colcustperm   = $sql_join;
         $colcustfilter = $sql_filter; // to avoid allowing this sql_filter to be modified by the $access_override search in the smart collection update below!!!
-
+        
+              
         # Special case if a key has been provided.
         if(getval('k', '') != '')
             {
@@ -2357,13 +1953,41 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
                     }
                 }   
             }   
+        $searchsql = $sql_prefix . "select distinct c.date_added,c.comment,c.purchase_size,c.purchase_complete,r.hit_count score,length(c.comment) commentset, $select from resource r  join collection_resource c on r.ref=c.resource $colcustperm  where c.collection='" . $collection . "' and $colcustfilter group by r.ref order by $order_by" . $sql_suffix;
+        $collectionsearchsql=hook('modifycollectionsearchsql','',array($searchsql));
 
-        $result = sql_query($sql_prefix . "select distinct c.date_added,c.comment,c.purchase_size,c.purchase_complete,r.hit_count score,length(c.comment) commentset, $select from resource r  join collection_resource c on r.ref=c.resource $colcustperm  where c.collection='" . $collection . "' and $colcustfilter group by r.ref order by $order_by" . $sql_suffix,false,$fetchrows);
-        hook('beforereturnresults', '', array($result, $archive)); 
-        
+        if($collectionsearchsql)
+            {
+            $searchsql=$collectionsearchsql;
+            }
+        if($return_refs_only)
+            {
+            // note that we actually include archive and created by columns too as often used to work out permission to edit collection
+            $result = sql_query($searchsql,false,$fetchrows,true,2,true,array('ref','archive', 'created_by'));
+            }
+        else
+            {
+            $result = sql_query($searchsql,false,$fetchrows);
+            }
+
+        hook('beforereturnresults', '', array($result, $archive));
+
         return $result;
         }
-    
+
+    # View Related - Pushed Metadata (for the view page)
+    if (substr($search,0,14)=="!relatedpushed")
+        {
+        # Extract the resource number
+        $resource=explode(" ",$search);$resource=str_replace("!relatedpushed","",$resource[0]);
+        $order_by=str_replace("r.","",$order_by); # UNION below doesn't like table aliases in the order by.
+        
+        return sql_query($sql_prefix . "select distinct r.hit_count score,rt.name resource_type_name, $select from resource r join resource_type rt on r.resource_type=rt.ref and rt.push_metadata=1 join resource_related t on (t.related=r.ref and t.resource='" . $resource . "') $sql_join  where 1=1 and $sql_filter group by r.ref 
+        UNION
+        select distinct r.hit_count score, rt.name resource_type_name, $select from resource r join resource_type rt on r.resource_type=rt.ref and rt.push_metadata=1 join resource_related t on (t.resource=r.ref and t.related='" . $resource . "') $sql_join  where 1=1 and $sql_filter group by r.ref 
+        order by $order_by" . $sql_suffix,false,$fetchrows);
+        }
+        
     # View Related
     if (substr($search,0,8)=="!related")
         {
@@ -2383,6 +2007,8 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
         select distinct r.hit_count score, $select from resource r join resource_related t on (t.resource=r.ref and t.related='" . $resource . "') $sql_join  where 1=1 and $sql_filter group by r.ref 
         order by $order_by" . $sql_suffix,false,$fetchrows);
         }
+        
+
         
     # Geographic search
     if (substr($search,0,4)=="!geo")
@@ -2458,14 +2084,13 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
         }
         
     # View Contributions
-    if (substr($search,0,14)=="!contributions") 
+    if (substr($search,0,14)=="!contributions")
         {
         global $userref;
         
         # Extract the user ref
         $cuser=explode(" ",$search);$cuser=str_replace("!contributions","",$cuser[0]);
         
-        if ($userref==$cuser) {$sql_filter="archive='$archive'";$sql_join="";} # Disable permissions when viewing your own contributions - only restriction is the archive status
         $select=str_replace(",rca.access group_access,rca2.access user_access ",",null group_access, null user_access ",$select);
         return sql_query($sql_prefix . "select distinct r.hit_count score, $select from resource r $sql_join  where created_by='" . $cuser . "' and r.ref > 0 and $sql_filter group by r.ref order by $order_by" . $sql_suffix,false,$fetchrows);
         }
@@ -2515,6 +2140,71 @@ function search_special($search,$sql_join,$fetchrows,$sql_prefix,$sql_suffix,$or
         $fieldref=intval(trim(substr($search,8)));
         $sql_join.=" join resource_data on r.ref=resource_data.resource and resource_data.resource_type_field=$fieldref and resource_data.value<>'' ";
         return sql_query($sql_prefix . "select distinct r.hit_count score, $select from resource r $sql_join and r.ref > 0 and $sql_filter group by r.ref order by $order_by" . $sql_suffix,false,$fetchrows);
+        }
+        
+    # Search for resource properties
+    if (substr($search,0,11)=="!properties")
+        {
+        // Note: in order to combine special searches with normal searches, these are separated by space (" ")
+        $searches_array = explode(' ', $search);
+        $properties     = explode(';', substr($searches_array[0], 11));
+        $sql_join.=" left join resource_dimensions rdim on r.ref=rdim.resource";
+        
+        foreach ($properties as $property)
+            {
+            $propertycheck=explode(":",$property);
+            if(count($propertycheck)==2)
+                {
+                $propertyname=$propertycheck[0];
+                $propertyval=escape_check($propertycheck[1]);
+                if($sql_filter==""){$sql_filter .= " where ";}else{$sql_filter .= " and ";}
+                switch($propertyname)
+                    {
+                    case "hmin":
+                        $sql_filter.=" rdim.height>='".  intval($propertyval) . "'";
+                    break;
+                    case "hmax":
+                        $sql_filter.=" rdim.height<='".  intval($propertyval) . "'";
+                    break;
+                    case "wmin":
+                        $sql_filter.=" rdim.width>='".  intval($propertyval) . "'";
+                    break;
+                    case "wmax":
+                        $sql_filter.=" rdim.width<='".  intval($propertyval) . "'";
+                    break;
+                    case "fmin":
+                        // Need to convert MB value to bytes
+                        $sql_filter.=" r.file_size>='".  (floatval($propertyval) * 1024 * 1024) . "'";
+                    break;
+                    case "fmax":
+                        // Need to convert MB value to bytes
+                        $sql_filter.=" r.file_size<='". (floatval($propertyval) * 1024 * 1024) . "'";
+                    break;
+                    case "fext":
+                        $propertyval=str_replace("*","%",$propertyval);
+                        $sql_filter.=" r.file_extension ";
+                        if(substr($propertyval,0,1)=="-")
+                            {
+                            $propertyval = substr($propertyval,1);
+                            $sql_filter.=" not ";                            
+                            }
+                        if(substr($propertyval,0,1)==".")
+                            {
+                            $propertyval = substr($propertyval,1);
+                            }
+                        $sql_filter.=" like '". escape_check($propertyval) . "'";
+                    break;
+                    case "pi":
+                        $sql_filter.=" r.has_image='".  intval($propertyval) . "'";
+                    break;
+                    case "cu":
+                        $sql_filter.=" r.created_by='".  intval($propertyval) . "'";
+                    break;
+                    }
+                }
+            }
+            
+        return sql_query($sql_prefix . "select distinct r.hit_count score, $select from resource r $sql_join  where r.ref > 0 and $sql_filter group by r.ref order by $order_by" . $sql_suffix,false,$fetchrows);
         }
 
     # Within this hook implementation, set the value of the global $sql variable:

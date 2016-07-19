@@ -10,6 +10,20 @@ include_once dirname(__FILE__)."/../include/resource_functions.php";
 include_once dirname(__FILE__)."/../include/search_functions.php";
 include_once dirname(__FILE__) . '/../include/render_functions.php';
 
+$order_by=getvalescaped("order_by",$default_collection_sort);
+$sort=getvalescaped("sort","DESC");
+$search=getvalescaped("search","");
+$last_collection=getval('last_collection','');
+$restypes=getvalescaped('restypes','');
+$archive=getvalescaped('archive','');
+$daylimit=getvalescaped('daylimit','');
+$offset=getvalescaped('offset','');
+$resources_count=getvalescaped('resources_count','');
+
+$change_col_url="search=" . urlencode($search). "&order_by=" . urlencode($order_by) . "&sort=" . urlencode($sort) . "&restypes=" . urlencode($restypes) . "&archive=" .urlencode($archive) . "&daylimit=" . urlencode($daylimit) . "&offset=" . urlencode($offset) . "&resources_count=" . urlencode($resources_count);
+
+// Set a flag for logged in users if $external_share_view_as_internal is set and logged on user is accessing an external share
+$internal_share_access = ($k!="" && $external_share_view_as_internal && isset($is_authenticated) && $is_authenticated);
 
 // copied from collection_manage to support compact style collection adds (without redirecting to collection_manage)
 $addcollection=getvalescaped("addcollection","");
@@ -33,7 +47,7 @@ if($emptycollection!='' && getvalescaped("submitted","")=='removeall' && getval(
     }
     
 # Disable checkboxes for external users.
-if ($k!="") {$use_checkboxes_for_selection=false;}
+if ($k!="" && !$internal_share_access) {$use_checkboxes_for_selection=false;}
 
 if(!isset($thumbs))
     {
@@ -58,14 +72,14 @@ else
 
 $collection=getvalescaped("collection","",true);
 $entername=getvalescaped("entername","");
-
+		
 # ------------ Change the collection, if a collection ID has been provided ----------------
 if ($collection!="")
 	{
 	hook("prechangecollection");
 	#change current collection
 	
-	if ($k=="" && $collection==-1)
+	if (($k=="" || $internal_share_access) && $collection==-1)
 		{
 		# Create new collection
 		if ($entername!=""){ $name=$entername;} 
@@ -80,20 +94,46 @@ if ($collection!="")
 		{
                 $validcollection=sql_value("select ref value from collection where ref='$collection'",0);
                 # Switch the existing collection
-		if ($k=="") {set_user_collection($userref,$collection);}
+		if ($k=="" || $internal_share_access) {set_user_collection($userref,$collection);}
 		$usercollection=$collection;
 		}
 
 	hook("postchangecollection");
 	}
 
-	
-# Load collection info.
+// Load collection info. 
+// get_user_collections moved before output as function may set cookies
 $cinfo=get_collection($usercollection);
+if('' == $k || $internal_share_access)
+    {
+    $list = get_user_collections($userref);
+    }
+
+# if the old collection or new collection is being displayed as search results, we'll need to update the search actions so "save results to this collection" is properly displayed
+if(substr($search, 0, 11) == '!collection' && ($k == '' || $internal_share_access))
+	{ 
+	# Extract the collection number - this bit of code might be useful as a function
+    $search_collection = explode(' ', $search);
+    $search_collection = str_replace('!collection', '', $search_collection[0]);
+    $search_collection = explode(',', $search_collection); // just get the number
+    $search_collection = escape_check($search_collection[0]);
+    if($search_collection==$last_collection || ($last_collection!=='' && $search_collection==$usercollection))
+    	{
+        ?>
+        <script>        	
+        	jQuery('.ActionsContainer.InpageNavLeftBlock').load(baseurl + "/pages/ajax/update_search_actions.php?<?php echo $change_col_url?>&collection=<?php echo $search_collection?>", function() {
+    			jQuery(this).children(':first').unwrap();
+			});
+        </script>
+        <?php
+        }
+    }
+	
+
 
 # Check to see if the user can edit this collection.
 $allow_reorder=false;
-if (($k=="") && (($userref==$cinfo["user"]) || ($cinfo["allow_changes"]==1) || (checkperm("h"))))
+if (($k=="" || $internal_share_access) && (($userref==$cinfo["user"]) || ($cinfo["allow_changes"]==1) || (checkperm("h"))))
 	{
 	$allow_reorder=true;
 	}	
@@ -125,7 +165,7 @@ if ($allow_reorder)
 			
 			jQuery.ajax({
 			  type: 'POST',
-			  url: '<?php echo $baseurl_short?>pages/collections.php?collection=<?php echo urlencode($usercollection) ?>&reorder=true',
+			  url: '<?php echo $baseurl_short?>pages/collections.php?collection=<?php echo urlencode($usercollection) ?>&search=<?php echo urlencode($search)?>&reorder=true',
 			  data: {order:JSON.stringify(newOrder)},
 			  success: function() {
 			    var results = new RegExp('[\\?&amp;]' + 'search' + '=([^&amp;#]*)').exec(window.location.href);
@@ -304,7 +344,7 @@ else { ?>
 	<body class="CollectBack" id="collectbody">
 <div style="display:none;" id="currentusercollection"><?php echo $usercollection?></div>
 
-<script>usercollection='<?php echo htmlspecialchars($collection) ?>';</script>
+<script>usercollection='<?php echo htmlspecialchars($usercollection) ?>';</script>
 <?php 
 
 $add=getvalescaped("add","");
@@ -351,7 +391,6 @@ if ($add!="")
 				daily_stat("Add resource to collection",$add);
 			
 				# Update resource/keyword kit count
-				$search=getvalescaped("search","");
 				if ((strpos($search,"!")===false) && ($search!="")) {update_resource_keyword_hitcount($add,$search);}
 				hook("postaddtocollection");
 				}
@@ -489,10 +528,12 @@ hook("processusercommand");
 <?php 
 $searches=get_saved_searches($usercollection);
 
-// Note that the full search is done initially. The time saved is due to content drawing and transfer.
-$result=do_search("!collection" . $usercollection,"","relevance",0);
-$count_result=count($result);
+// Do an initial count of how many resources there are in the collection (only returning ref and archive)
+$results_all=do_search("!collection" . $usercollection,"","relevance",0,-1,"desc",false,0,false,false,"",false,true,true);
+$count_result=count($results_all);
 
+// Then do another pass getting all data for the maximum allowed collection thumbs
+$result=do_search("!collection" . $usercollection,"","relevance",0,$max_collection_thumbs,"desc");
 
 $hook_count=hook("countresult","",array($usercollection,$count_result));if (is_numeric($hook_count)) {$count_result=$hook_count;} # Allow count display to be overridden by a plugin (e.g. that adds it's own resources from elsewhere e.g. ResourceConnect).
 $feedback=$cinfo["request_feedback"];
@@ -591,16 +632,16 @@ else if ($basket)
 	<p style="padding-bottom:10px;"><input type="submit" name="buy" value="&nbsp;&nbsp;&nbsp;<?php echo $lang["buynow"] ?>&nbsp;&nbsp;&nbsp;" /></p>
 	<?php } ?>
 	<?php if (!$disable_collection_toggle) { ?>
-    <a id="toggleThumbsLink" href="#" onClick="ToggleThumbs();return false;">&gt; <?php echo $lang["hidethumbnails"]?></a>
+    <a id="toggleThumbsLink" href="#" onClick="ToggleThumbs();return false;"><?php echo LINK_CARET ?><?php echo $lang["hidethumbnails"]?></a>
   <?php } ?>
-	<a href="<?php echo $baseurl_short?>pages/purchases.php" onclick="return CentralSpaceLoad(this,true);">&gt; <?php echo $lang["viewpurchases"]?></a>
+	<a href="<?php echo $baseurl_short?>pages/purchases.php" onclick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["viewpurchases"]?></a>
 
 
 	</form>
 	</div>
 	<?php	
 	}
-elseif ($k!="")
+elseif ($k!="" && !$internal_share_access)
 	{
 	# ------------- Anonymous access, slightly different display ------------------
 	$tempcol=$cinfo;
@@ -614,11 +655,11 @@ elseif ($k!="")
   	</div>
     <?php
 	if ($download_usage && ((isset($zipcommand) || $collection_download) && $count_result>0)) { ?>
-		<a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/terms.php?k=<?php echo urlencode($k) ?>&url=<?php echo urlencode("pages/download_usage.php?collection=" .  $usercollection . "&k=" . $k)?>">&gt; <?php echo $lang["action-download"]?></a>
+		<a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/terms.php?k=<?php echo urlencode($k) ?>&url=<?php echo urlencode("pages/download_usage.php?collection=" .  $usercollection . "&k=" . $k)?>"><?php echo LINK_CARET ?><?php echo $lang["action-download"]?></a>
 	<?php } else if ((isset($zipcommand) || $collection_download) && $count_result>0) { ?>
-	<a href="<?php echo $baseurl_short?>pages/terms.php?k=<?php echo urlencode($k) ?>&url=<?php echo urlencode("pages/collection_download.php?collection=" .  $usercollection . "&k=" . $k)?>" onclick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["action-download"]?></a>
+	<a href="<?php echo $baseurl_short?>pages/terms.php?k=<?php echo urlencode($k) ?>&url=<?php echo urlencode("pages/collection_download.php?collection=" .  $usercollection . "&k=" . $k)?>" onclick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["action-download"]?></a>
 	<?php }
-     if ($feedback) {?><br /><br /><a onclick="return CentralSpaceLoad(this);" href="<?php echo $baseurl_short?>pages/collection_feedback.php?collection=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>">&gt;&nbsp;<?php echo $lang["sendfeedback"]?></a><?php } ?>
+     if ($feedback) {?><br /><br /><a onclick="return CentralSpaceLoad(this);" href="<?php echo $baseurl_short?>pages/collection_feedback.php?collection=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>"><?php echo LINK_CARET ?><?php echo $lang["sendfeedback"]?></a><?php } ?>
     <?php if ($count_result>0 && checkperm("q"))
     	{ 
 		# Ability to request a whole collection (only if user has restricted access to any of these resources)
@@ -626,7 +667,7 @@ elseif ($k!="")
 		if ($min_access!=0)
 			{
 		    ?>
-		    <br/><a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_request.php?ref=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>">&gt; <?php echo $lang["requestall"]?></a>
+		    <br/><a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_request.php?ref=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>"><?php echo LINK_CARET ?><?php echo $lang["requestall"]?></a>
 		    <?php
 		    }
 	    }
@@ -647,11 +688,10 @@ elseif ($k!="")
 
 <?php if (!hook("thumbsmenu")) { ?>
   <?php if (!hook("replacecollectiontitle") && !hook("replacecollectiontitlemax")) { ?><h2 id="CollectionsPanelHeader"><a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_manage.php"><?php echo $lang["mycollections"]?></a></h2><?php } ?>
-  <form method="get" id="colselect" onsubmit="newcolname=encodeURIComponent(jQuery('#entername').val());CollectionDivLoad('<?php echo $baseurl_short?>pages/collections.php?collection=-1&k=<?php echo urlencode($k) ?>&entername='+newcolname);return false;">
+  <form method="get" id="colselect" onsubmit="newcolname=encodeURIComponent(jQuery('#entername').val());CollectionDivLoad('<?php echo $baseurl_short?>pages/collections.php?collection=-1&search=<?php echo urlencode($search)?>&k=<?php echo urlencode($k) ?>&entername='+newcolname);return false;">
 		<div class="SearchItem" style="padding:0;margin:0;"><?php echo $lang["currentcollection"]?>&nbsp;(<strong><?php echo $count_result?></strong>&nbsp;<?php if ($count_result==1){echo $lang["item"];} else {echo $lang["items"];}?>): 
-		<select name="collection" id="collection" onchange="if(document.getElementById('collection').value==-1){document.getElementById('entername').style.display='block';document.getElementById('entername').focus();return false;} <?php if (!checkperm("b")){ ?>ChangeCollection(jQuery(this).val(),'<?php echo urlencode($k)  ?>');<?php } else { ?>document.getElementById('colselect').submit();<?php } ?>" <?php if ($collection_dropdown_user_access_mode){?>class="SearchWidthExp"<?php } else { ?> class="SearchWidth"<?php } ?>>
+		<select name="collection" id="collection" onchange="if(document.getElementById('collection').value==-1){document.getElementById('entername').style.display='block';document.getElementById('entername').focus();return false;} <?php if (!checkperm("b")){ ?>ChangeCollection(jQuery(this).val(),'<?php echo urlencode($k)  ?>','<?php echo urlencode($usercollection) ?>','<?php echo $change_col_url?>');<?php } else { ?>document.getElementById('colselect').submit();<?php } ?>" <?php if ($collection_dropdown_user_access_mode){?>class="SearchWidthExp"<?php } else { ?> class="SearchWidth"<?php } ?>>
 		<?php
-		$list=get_user_collections($userref);
 		$found=false;
 		for ($n=0;$n<count($list);$n++)
 			{
@@ -713,8 +753,10 @@ elseif ($k!="")
 	<?php
 	// Render dropdown actions
 	hook("beforecollectiontoolscolumn");
-	render_actions($cinfo, false);
-	hook("aftercollectionsrenderactions");
+
+    $resources_count = $count_result;
+	render_actions($cinfo, false,true,'',$results_all);
+    hook("aftercollectionsrenderactions");
 	?>
  	<ul>
 	<?php
@@ -743,7 +785,7 @@ elseif ($k!="")
 
 <?php 
 # Loop through saved searches
-if (isset($cinfo['savedsearch'])&&$cinfo['savedsearch']==null  && $k=='')
+if (isset($cinfo['savedsearch'])&&$cinfo['savedsearch']==null  && ($k=='' || $internal_share_access))
 	{ // don't include saved search item in result if this is a smart collection  
 
 	# Setting the save search icon
@@ -828,19 +870,19 @@ if ($count_result>0)
 		<?php if ($k!="" && $feedback) { # Allow feedback for external access key users
 		?>
 		<div class="CollectionPanelInfo">
-		<span class="IconComment <?php if ($result[$n]["commentset"]>0) { ?>IconCommentAnim<?php } ?>"><a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_comment.php?ref=<?php echo urlencode($ref) ?>&collection=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>"><img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="14" height="12" /></a></span>		
+		<span class="IconComment <?php if ($result[$n]["commentset"]>0) { ?>IconCommentAnim<?php } ?>"><a onclick="return ModalLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_comment.php?ref=<?php echo urlencode($ref) ?>&collection=<?php echo urlencode($usercollection) ?>&k=<?php echo urlencode($k) ?>"><img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="14" height="12" /></a></span>		
 		</div>
 		<?php } ?>
 	
-		<?php if ($k=="") { ?><div class="CollectionPanelInfo">
+		<?php if ($k=="" || $internal_share_access) { ?><div class="CollectionPanelInfo">
 		<?php if (($feedback) || (($collection_reorder_caption || $collection_commenting))) { ?>
-		<span class="IconComment <?php if ($result[$n]["commentset"]>0) { ?>IconCommentAnim<?php } ?>"><a onclick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_comment.php?ref=<?php echo urlencode($ref) ?>&collection=<?php echo urlencode($usercollection) ?>"><img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="14" height="12" /></a></span>		
+		<span class="IconComment <?php if ($result[$n]["commentset"]>0) { ?>IconCommentAnim<?php } ?>"><a onclick="return ModalLoad(this,true);" href="<?php echo $baseurl_short?>pages/collection_comment.php?ref=<?php echo urlencode($ref) ?>&collection=<?php echo urlencode($usercollection) ?>"><img src="<?php echo $baseurl_short?>gfx/interface/sp.gif" alt="" width="14" height="12" /></a></span>		
 		<?php } ?>
 
 		<?php if (!isset($cinfo['savedsearch'])||(isset($cinfo['savedsearch'])&&$cinfo['savedsearch']==null)){ // add 'remove' link only if this is not a smart collection 
 			?>
 		<?php if (!hook("replaceremovelink")){?>
-		<a class="CollectionResourceRemove" onclick="return CollectionDivLoad(this);" href="<?php echo $baseurl_short?>pages/collections.php?remove=<?php echo urlencode($ref) ?>&nc=<?php echo time()?>">x <?php echo $lang["action-remove"]?></a>
+		<a class="CollectionResourceRemove" onclick="return CollectionDivLoad(this);" href="<?php echo $baseurl_short?>pages/collections.php?remove=<?php echo urlencode($ref) ?>&nc=<?php echo time()?>"><i class="fa fa-minus-circle"></i> <?php echo $lang["action-remove"]?></a>
 		<?php
 				} //end hook replaceremovelink 
 			} # End of remove link condition 
@@ -851,6 +893,9 @@ if ($count_result>0)
 		<?php
 		} # End of ResourceView hook
 	  } # End of loop through resources
+	?>
+	<div class="clearerleft"></div>
+	<?php
 	} # End of results condition
 
 	
@@ -975,7 +1020,7 @@ hook("thumblistextra");
     	hook('aftertogglethumbs');
 
 	    // Render dropdown actions
-		render_actions($cinfo, false, false, "min");
+		render_actions($cinfo, false, false, "min",$results_all);
 		?>
 		</div>
 
@@ -991,11 +1036,11 @@ hook("thumblistextra");
 		<div id="CollectionMinDrop">
 	 		<form method="get"
 	 			  id="colselect2" 
-	 			  onsubmit="newcolname=encodeURIComponent(jQuery('#entername2').val());CollectionDivLoad('<?php echo $baseurl_short; ?>pages/collections.php?thumbs=hide&collection=-1&k=<?php echo urlencode($k); ?>&entername='+newcolname);return false;">
+	 			  onsubmit="newcolname=encodeURIComponent(jQuery('#entername2').val());CollectionDivLoad('<?php echo $baseurl_short; ?>pages/collections.php?thumbs=hide&collection=-1&search=<?php echo urlencode($search)?>&k=<?php echo urlencode($k); ?>&search=<?php echo urlencode($search)?>&entername='+newcolname);return false;">
 				<div class="MinSearchItem" id="MinColDrop">
 					<input type=text id="entername2" name="entername" placeholder="<?php echo $lang['entercollectionname']; ?>" style="display:inline;display:none;" class="SearchWidthExp">
 				</div>
-				<script>jQuery('#collection').clone().attr('id','collection2').attr('onChange',"if(document.getElementById('collection2').value==-1){document.getElementById('entername2').style.display='inline';document.getElementById('entername2').focus();return false;}<?php if (!checkperm("b")){ ?>ChangeCollection(jQuery(this).val(),'<?php echo urlencode($k) ?>');<?php } else { ?>document.getElementById('colselect2').submit();<?php } ?>").prependTo('#MinColDrop');</script>
+				<script>jQuery('#collection').clone().attr('id','collection2').attr('onChange',"if(document.getElementById('collection2').value==-1){document.getElementById('entername2').style.display='inline';document.getElementById('entername2').focus();return false;}<?php if (!checkperm('b')){ ?>ChangeCollection(jQuery(this).val(),'<?php echo urlencode($k) ?>','<?php echo urlencode($usercollection) ?>','<?php echo $change_col_url ?>');<?php } else { ?>document.getElementById('colselect2').submit();<?php } ?>").prependTo('#MinColDrop');</script>
 	  		</form>
 		</div>
 		<?php

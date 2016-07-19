@@ -1,7 +1,7 @@
 <?php
 
 include '../../../include/db.php';
-include '../../../include/general.php';
+include_once '../../../include/general.php';
 include '../../../include/authenticate.php';
 include '../../../include/resource_functions.php';
 include '../include/propose_changes_functions.php';
@@ -15,9 +15,9 @@ $order_by=getvalescaped("order_by","relevance");
 $offset=getvalescaped("offset",0,true);
 $restypes=getvalescaped("restypes","");
 if (strpos($search,"!")!==false) {$restypes="";}
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);
 
 $archive=getvalescaped("archive",0,true);
 
@@ -89,6 +89,8 @@ if (getval("save","")!="")
 		$proposefields=get_resource_field_data($ref,false,true); // Get updated data after save so we can send email with values
 		for ($n=0;$n<count($proposefields);$n++)
 			{
+			node_field_options_override($proposefields[$n]);
+
 			# Has this field been accepted?
 			if (getval("accept_change_" . $proposefields[$n]["ref"],"")!="")
 				{	
@@ -191,26 +193,59 @@ if (getval("save","")!="")
 			
 			$message=$lang["propose_changes_proposed_changes_submitted"] . "<br>";
 			$message.=$templatevars['changesummary'];
+            $notification_message = $message;
 			$message.=$templatevars['proposer'] . $lang["propose_changes_proposed_changes_submitted_text"] . $ref . "<br>";
 			$message.= $templatevars['url'];
 			
 				
 			if($propose_changes_notify_admin)
 				{				
-				debug("propose_changes: sending submitted email to admin");
-				
-				send_mail($email_notify,$applicationname . ": " . $lang["propose_changes_proposed_changes_submitted"],$message,"","","emailproposedchanges",$templatevars);
-				}
+				debug("propose_changes: sending submitted message/email to admins");
+				$admin_notify_emails = array();
+                $admin_notify_users = array();
+                $notify_users=get_notification_users("RESOURCE_ADMIN");
+                foreach($notify_users as $notify_user)
+                    {
+                    get_config_option($notify_user['ref'],'user_pref_resource_notifications', $send_message);		  
+                    if($send_message==false){$continue;}		
+                    get_config_option($notify_user['ref'],'email_user_notifications', $send_email);    
+                    if($send_email && $notify_user["email"]!="")
+                        {
+                        $admin_notify_emails[] = $notify_user['email'];				
+                        }        
+                    else
+                        {
+                        $admin_notify_users[]=$notify_user["ref"];
+                        }
+                    }
+               }
 			if($propose_changes_notify_contributor)
 				{
-				$notifyuser=get_user($resource["created_by"]);
-				if($notifyuser)
+				$notify_user=get_user($resource["created_by"]);
+				if($notify_user)
 					{
-					debug("propose_changes: sending submitted email to contributor");
-					send_mail($notifyuser["email"],$applicationname . ": " . $lang["propose_changes_proposed_changes_submitted"],$message,"","","emailproposedchanges",$templatevars);
+					debug("propose_changes: sending notification to resource contributor, " . $notify_user['username'] . "user id#" . $notify_user['ref'] . " (" . $notify_user['email'] . ")");
+					get_config_option($notify_user['ref'],'email_user_notifications', $send_email);    
+                    if($send_email && $notify_user["email"]!="")
+                        {
+                        $admin_notify_emails[] = $notify_user['email'];				
+                        }        
+                    else
+                        {
+                        $admin_notify_users[]=$notify_user["ref"];
+                        }
 					}
 				}
-					
+             foreach($admin_notify_emails as $admin_notify_email)
+                    {
+                    send_mail($admin_notify_email,$applicationname . ": " . $lang["propose_changes_proposed_changes_submitted"],$message,"","","emailproposedchanges",$templatevars);    
+                    }
+                
+                if (count($admin_notify_users)>0)
+                    {
+                    message_add($admin_notify_users,$notification_message,$baseurl . "/plugins/propose_changes/pages/propose_changes.php?ref=" . $ref . "&proposeuser=" . $userref);
+                    }
+            		
 			foreach($propose_changes_notify_addresses as $propose_changes_notify_address)
 				{
 				if($propose_changes_notify_address!="")
@@ -454,7 +489,7 @@ if (isset($resulttext))
 	
 ?>
 
-<p><a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["backtoresourceview"]?></a></p>
+<p><a href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo urlencode($ref) ?>&search=<?php echo urlencode($search)?>&offset=<?php echo urlencode($offset) ?>&order_by=<?php echo urlencode($order_by) ?>&sort=<?php echo urlencode($sort) ?>&archive=<?php echo urlencode($archive) ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresourceview"]?></a></p>
 
 <div class="BasicsBox" id="propose_changes_box">
 <h1 id="editresource">
@@ -523,6 +558,8 @@ if(!$editaccess)
 	$fieldcount=0;
 	for ($n=0;$n<count($proposefields);$n++)
 		{
+		node_field_options_override($proposefields[$n]);
+
 		if (is_field_displayed($proposefields[$n]))
 			{
 			$display_any_fields=true;
@@ -572,7 +609,8 @@ if(!$editaccess)
 
 	for ($n=0;$n<count($proposefields);$n++)
 		{
-		
+		node_field_options_override($proposefields[$n]);
+
 		# Should this field be displayed?
 		if (is_field_displayed($proposefields[$n]))
 			{	

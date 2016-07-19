@@ -6,14 +6,20 @@
 	// check for callback, i.e. this file being called directly to get any new messages
 	if (basename(__FILE__)==basename($_SERVER['PHP_SELF']))
 		{
-
-		include __DIR__ . "/../../include/general.php";
-		include __DIR__ . "/../../include/db.php";
+		include_once __DIR__ . "/../../include/db.php";
+		include_once __DIR__ . "/../../include/general.php";
+		
 
 		// It is an acknowledgement so set as seen and get out of here
 		if (isset($_GET['seen']))
 			{
 			message_seen($_GET['seen']);
+			return;
+			}
+			
+		if (isset($_GET['unseen']))
+			{
+			message_unseen($_GET['unseen']);
 			return;
 			}
 
@@ -80,7 +86,7 @@
 			url: '<?php echo $baseurl; ?>/pages/ajax/message.php',
 			type: 'GET',
 			success: function(messages, textStatus, xhr) {
-				if(xhr.status==200 && (messages=jQuery.parseJSON(messages)) && messages.length>0)
+				if(xhr.status==200 && isJson(messages) && (messages=jQuery.parseJSON(messages)) && messages.length>0)
 				{
 					jQuery('span.MessageCountPill').html(messages.length).click(function() {
 						CentralSpaceLoad('<?php echo $baseurl; ?>/pages/user/user_messages.php',true);
@@ -100,13 +106,20 @@
 								continue;
 							}
 							message_refs.push(ref);
-							var message = messages[i]['message'];
+							var message = nl2br(messages[i]['message']);
 							var url = messages[i]['url'];
-							message_display(message, url, ref, function (ref) {
-								jQuery.get('<?php echo $baseurl; ?>/pages/ajax/message.php?seen=' + ref).done(function () {
-									message_poll();
+							<?php
+							if($user_pref_show_notifications)
+								{
+								?>
+								message_display(message, url, ref, function (ref) {
+									jQuery.get('<?php echo $baseurl; ?>/pages/ajax/message.php?seen=' + ref).done(function () {
+									});
 								});
-							});
+								<?php
+								}
+								?>
+								message_poll();
 						}
 					}
 				}
@@ -155,7 +168,7 @@
 		{
 			return;
 		}
-		jQuery('div#MessageContainer').append("<div class='MessageBox' style='display: none;' id='" + id + "'>" + message + "<br />" + url + "</div>").after(function()
+		jQuery('div#MessageContainer').append("<div class='MessageBox' style='display: none;' id='" + id + "'>" + nl2br(message) + "<br />" + url + "</div>").after(function()
 		{
 			var t = window.setTimeout(function()
 			{
@@ -198,5 +211,48 @@
 			});
 		});
 	}
+	
+	function message_modal(message, url, ref, owner)
+		{
+		if (typeof ref==="undefined")
+			{
+				ref=new Date().getTime();
+			}
+		if (typeof url==="undefined")
+			{
+				url="";
+			}
+		if (url!="")
+			{
+				url=decodeURIComponent(url);
+				url="<a href='" + url + "'><?php echo $lang['link']; ?></a>";
+			}
+		if (typeof owner==="undefined" || owner=='')
+			{
+			owner = '<?php echo htmlspecialchars($applicationname, ENT_QUOTES); ?>';
+			}
+		jQuery("#modal_dialog").html("<div class='MessageText'>" + nl2br(message) + "</div><br />" + url);
+		jQuery("#modal_dialog").addClass('message_dialog');
+		jQuery("#modal_dialog").dialog({
+			title: '<?php echo $lang['message'] . " " . strtolower($lang["from"]) . " "; ?>' + owner,
+			modal: true,
+			resizable: false,
+			buttons: [{text: '<?php echo $lang['ok'] ?>',
+					  click: function() {
+						jQuery( this ).dialog( "close" );
+						}}],
+			dialogClass: 'message',
+			width:'auto',
+			draggable: true,
+			open: function(event, ui) { jQuery('.ui-widget-overlay').bind('click', function(){ jQuery("#modal_dialog").dialog('close'); }); },
+			close: function( event, ui ) {
+				jQuery('#modal_dialog').html('');
+				jQuery("#modal_dialog").removeClass('message_dialog');
+				jQuery.get('<?php echo $baseurl; ?>/pages/ajax/message.php?seen=' + ref);
+				},
+			dialogClass: 'no-close'
+			});
+			 
+		}
 
 </script>

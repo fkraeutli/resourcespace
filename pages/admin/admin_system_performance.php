@@ -1,6 +1,6 @@
 <?php
 include '../../include/db.php';
-include '../../include/general.php';
+include_once '../../include/general.php';
 include '../../include/authenticate.php'; if(!checkperm('a')) { exit('Permission denied.'); }
 
 include "../../include/header.php";
@@ -62,6 +62,7 @@ while (microtime(true)<($timer+1)) // Run for one second
     fwrite($f,str_pad("",10000,"X"));
     $counter++;
     }
+fclose($f);
 unlink($tmp . "/performance_test.txt");
 ?>
 <div class="Question">

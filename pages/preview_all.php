@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 
 # External access support (authenticate only if no key provided, or if invalid access key provided)
 $k=getvalescaped("k","");if (($k=="") || (!check_access_key(getvalescaped("ref","",true),$k))) {include "../include/authenticate.php";}
@@ -25,20 +25,20 @@ $allow_reorder=false;
 
 # Fetch and set the values
 $search=getvalescaped("search","");
-if (strpos($search,"!")===false) {setcookie("search",$search, 0, '', '', false, true);} # store the search in a cookie if not a special search
-$offset=getvalescaped("offset",0);if (strpos($search,"!")===false) {setcookie("saved_offset",$offset, 0, '', '', false, true);}
+if (strpos($search,"!")===false) {rs_setcookie('search', $search);} # store the search in a cookie if not a special search
+$offset=getvalescaped("offset",0);if (strpos($search,"!")===false) {rs_setcookie('saved_offset', $offset);}
 if ((!is_numeric($offset)) || ($offset<0)) {$offset=0;}
-$order_by=getvalescaped("order_by",$default_sort);if (strpos($search,"!")===false) {setcookie("saved_order_by",$order_by, 0, '', '', false, true);}
-if ($order_by=="") {$order_by=$default_sort;}
-$per_page=getvalescaped("per_page",$default_perpage);setcookie("per_page",$per_page, 0, '', '', false, true);
-$archive=getvalescaped("archive",0);if (strpos($search,"!")===false) {setcookie("saved_archive",$archive, 0, '', '', false, true);}
+$order_by=getvalescaped("order_by",$default_sort_direction);if (strpos($search,"!")===false) {rs_setcookie('saved_order_by', $order_by);}
+if ($order_by=="") {$order_by=$default_sort_direction;}
+$per_page=getvalescaped("per_page",$default_perpage);rs_setcookie('per_page', $per_page);
+$archive=getvalescaped("archive",0);if (strpos($search,"!")===false) {rs_setcookie('saved_archive', $archive);}
 $jumpcount=0;
 
 # Most sorts such as popularity, date, and ID should be descending by default,
 # but it seems custom display fields like title or country should be the opposite.
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);setcookie("saved_sort",$sort, 0, '', '', false, true);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);rs_setcookie('saved_sort', $sort);
 $revsort = ($sort=="ASC") ? "DESC" : "ASC";
 
 
@@ -69,9 +69,9 @@ $page=getvalescaped("page",1);
 $alternative=getvalescaped("alternative",-1);
 if (strpos($search,"!")!==false) {$restypes="";}
 
-$default_sort="DESC";
-if (substr($order_by,0,5)=="field"){$default_sort="ASC";}
-$sort=getval("sort",$default_sort);
+$default_sort_direction="DESC";
+if (substr($order_by,0,5)=="field"){$default_sort_direction="ASC";}
+$sort=getval("sort",$default_sort_direction);
 $headerinsert="
 	 <!--[if lt IE 7]><link rel='stylesheet' type='text/css' href='../css/ie.css'><![endif]-->
 ";
@@ -122,7 +122,7 @@ function ReorderResources(id1,id2)
 </script>
 <br/>
 <table id="preview_all_table" style="width:100%;">
-<tr><p style="margin:7px 0 7px 0;padding:0;"><a class="enterLink" href="<?php if ($backto!=''){echo urlencode($backto);} else { echo $baseurl_short.'pages/search';}?>.php?search=%21collection<?php echo urlencode($colref)?>&order_by=<?php echo urlencode($order_by)?>&col_order_by=<?php echo urlencode($col_order_by)?>&sort=<?php echo urlencode($sort)?>&k=<?php echo urlencode($k)?>">&lt;&nbsp;<?php echo $lang["backtoresults"]?></a>
+<tr><p style="margin:7px 0 7px 0;padding:0;"><a class="enterLink" href="<?php if ($backto!=''){echo urlencode($backto);} else { echo $baseurl_short.'pages/search';}?>.php?search=%21collection<?php echo urlencode($colref)?>&order_by=<?php echo urlencode($order_by)?>&col_order_by=<?php echo urlencode($col_order_by)?>&sort=<?php echo urlencode($sort)?>&k=<?php echo urlencode($k)?>"><?php echo LINK_CARET_BACK ?><?php echo $lang["backtoresults"]?></a>
 &nbsp;&nbsp;<a href="<?php echo $baseurl_short?>pages/preview_all.php?backto=<?php echo urlencode($backto)?>&ref=<?php echo urlencode($colref)?>&vertical=h&offset=<?php echo urlencode($offset)?>&search=<?php echo urlencode($search)?>&order_by=<?php echo urlencode($order_by)?>&col_order_by=<?php echo urlencode($col_order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>&k=<?php echo urlencode($k)?>">&gt; <?php echo $lang["horizontal"]; ?> </a>
 &nbsp;&nbsp;<a href="<?php echo $baseurl_short?>pages/preview_all.php?backto=<?php echo urlencode($backto)?>&ref=<?php echo urlencode($colref)?>&vertical=v&offset=<?php echo urlencode($offset)?>&search=<?php echo urlencode($search)?>&order_by=<?php echo urlencode($order_by)?>&col_order_by=<?php echo urlencode($col_order_by)?>&sort=<?php echo urlencode($sort)?>&archive=<?php echo urlencode($archive)?>&k=<?php echo urlencode($k)?>">&gt; <?php echo $lang["vertical"]; ?> </a>
 </tr>
@@ -222,7 +222,7 @@ if (!(isset($resource['is_transcoding']) && $resource['is_transcoding']==1) && f
 <?php if (!$allow_reorder){?><a id="resourcelink<?php echo $ref?>" href="<?php echo $baseurl_short?>pages/view.php?ref=<?php echo $result[$x]['ref']?>&search=<?php echo urlencode($search)?>&order_by=<?php echo urlencode($order_by)?>&archive=<?php echo urlencode($archive)?>&k=<?php echo urlencode($k)?>&sort=<?php echo urlencode($sort)?>"><?php } //end if !reorder?><img class="Picture<?php if (!$border){?>Doc<?php } ?>" id="image<?php echo htmlspecialchars($ref)?>" imageheight="<?php echo $imageheight?>" src="<?php echo $url?>" alt="" style="height:<?php echo $height?>px;" /><?php if (!$allow_reorder){?></a><?php } //end if !reorder?><br/><br/>
 <?php } ?>
 <?php if ($search_titles){$heightmod=150;} else {$heightmod=120;}
-if ($collections_compact_style){$heightmod=$heightmod+20;}?>
+if (isset($collections_compact_style) && ($collections_compact_style)){$heightmod=$heightmod+20;}?>
 <script type="text/javascript">
 var maxheight=window.innerHeight-<?php echo $heightmod?>;
 if (isNaN(maxheight)){maxheight=document.documentElement.clientHeight-<?php echo $heightmod?>;}

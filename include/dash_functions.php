@@ -12,7 +12,7 @@
  *  If passed false you must give this tile to a user with sql_insert_id() to have it used
  * 
  */
-function create_dash_tile($url,$link,$title,$reload_interval,$all_users,$default_order_by,$resource_count,$text="",$delete=1)
+function create_dash_tile($url,$link,$title,$reload_interval,$all_users,$default_order_by,$resource_count,$text="",$delete=1, array $specific_user_groups = array())
 	{
 	
 	$rebuild_order=TRUE;
@@ -21,8 +21,8 @@ function create_dash_tile($url,$link,$title,$reload_interval,$all_users,$default
 	if(empty($reload_interval) || !is_numeric($reload_interval))
 		{$reload_interval=0;}
 
-	$delete = $delete?1:0;
-	$all_users=$all_users?1:0;
+	$delete    = $delete ? 1 : 0;
+	$all_users = $all_users ? 1 : 0;
 
 	if(!is_numeric($default_order_by))
 		{
@@ -42,12 +42,18 @@ function create_dash_tile($url,$link,$title,$reload_interval,$all_users,$default
 		{
 		$result = sql_query("INSERT INTO dash_tile (url,link,title,reload_interval_secs,all_users,default_order_by,resource_count,allow_delete,txt) VALUES ('".$url."','".$link."','".escape_check($title)."',".$reload_interval.",".$all_users.",".$default_order_by.",".$resource_count.",".$delete.",'".escape_check($text)."')");
 		$tile=sql_insert_id();
+
+        foreach($specific_user_groups as $user_group_id)
+            {
+            add_usergroup_dash_tile($user_group_id, $tile, $default_order_by);
+            build_usergroup_dash($user_group_id);
+            }
 		}
 
 	# If tile already existed then this no reorder
 	if($rebuild_order){reorder_default_dash();}
 	
-	if($all_users==1)
+	if($all_users==1 && empty($specific_user_groups))
 		{
 		sql_query("DELETE FROM user_dash_tile WHERE dash_tile=".$tile);
 		$result = sql_query("INSERT user_dash_tile (user,dash_tile,order_by) SELECT user.ref,'".$tile."',5 FROM user");
@@ -111,6 +117,7 @@ function delete_dash_tile($tile,$cascade=TRUE,$force=FALSE)
 	if($cascade)
 		{
 		sql_query("DELETE FROM user_dash_tile WHERE dash_tile='".$tile."'");
+		sql_query("DELETE FROM usergroup_dash_tile WHERE dash_tile = '{$tile}'");
 		}
 	}
 
@@ -289,13 +296,14 @@ function get_alluser_available_tiles($tile="null")
 				dash_tile.all_users,
 				dash_tile.allow_delete,
 				dash_tile.default_order_by,
+                dash_tile.default_order_by AS `order_by`, # needed for get_default_dash()
 				(IF(ref IN (select distinct dash_tile FROM user_dash_tile),1,0)) as 'dash_tile'
 			FROM
 				dash_tile
 			WHERE
 				dash_tile.all_users=1 
-			
 			".$tilecheck."
+                AND ref NOT IN (SELECT dash_tile FROM usergroup_dash_tile)
 			ORDER BY 
 			dash_tile,
 			default_order_by
@@ -308,18 +316,73 @@ function get_alluser_available_tiles($tile="null")
  * Retrieves the default dash which only display all_user tiles.
  * This should only be accessible to thos with Dash Tile Admin permissions
  */
-function get_default_dash()
+function get_default_dash($user_group_id = null, $edit_mode = false)
 	{
-	global $baseurl,$baseurl_short,$lang,$anonymous_login,$username,$dash_tile_shadows;
+	global $baseurl,$baseurl_short,$lang,$anonymous_login,$username,$dash_tile_shadows, $dash_tile_colour, $dash_tile_colour_options;
+
 	#Build Tile Templates
-	$tiles = sql_query("SELECT dash_tile.ref AS 'tile',dash_tile.title,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,dash_tile.default_order_by as 'order_by',dash_tile.allow_delete FROM dash_tile WHERE dash_tile.all_users=1 AND (dash_tile.allow_delete=1 OR (dash_tile.allow_delete=0 AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile))) ORDER BY default_order_by");
+	$tiles = sql_query("SELECT dash_tile.ref AS 'tile',dash_tile.title,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,dash_tile.default_order_by as 'order_by',dash_tile.allow_delete FROM dash_tile WHERE dash_tile.all_users = 1 AND dash_tile.ref NOT IN (SELECT dash_tile FROM usergroup_dash_tile) AND (dash_tile.allow_delete=1 OR (dash_tile.allow_delete=0 AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile))) ORDER BY default_order_by");
+
+    // In edit_mode, as a super admin, we want to see all user dash tiles otherwise re-ordering will be broken
+    // due to tiles that are not visible but still being taken into account
+    $hidden_tiles      = array();
+    $hidden_tile_class = '';
+
+    if($edit_mode)
+        {
+        $managed_tiles      = $tiles;
+        $tiles              = get_alluser_available_tiles();
+        $hidden_tile_class  = ' HiddenTile';
+
+        foreach($tiles as $all_user_available_tile)
+            {
+            if(false === array_search($all_user_available_tile['ref'], array_column($managed_tiles, 'tile')))
+                {
+                $hidden_tiles[] = $all_user_available_tile['ref'];
+                }
+            }
+        }
+    
+    if(!is_null($user_group_id))
+        {
+        $tiles = get_usergroup_available_tiles($user_group_id);
+        }
+
 	$order=10;
 	if(count($tiles)==0){echo $lang["nodashtilefound"];exit;}
 	foreach($tiles as $tile)
 		{
-		if($order != $tile["order_by"] || ($tile["order_by"] % 10) > 0){update_default_dash_tile_order($tile["tile"],$order);}
+        $contents_tile_class = '';
+
+        if(($order != $tile["order_by"] || ($tile["order_by"] % 10) > 0) && is_null($user_group_id))
+            {
+            update_default_dash_tile_order($tile["tile"],$order);
+            }
+        else if((!isset($tile['default_order_by']) || $order != $tile['default_order_by'] || ($tile['default_order_by'] % 10) > 0) && !is_null($user_group_id))
+            {
+            update_usergroup_dash_tile_order($user_group_id, $tile['tile'], $order);
+            }
+
 		$order+=10;
-		?>
+
+        $tile_custom_style = '';
+
+        if($dash_tile_colour)
+            {
+            $buildstring = explode('?', $tile['url']);
+            parse_str(str_replace('&amp;', '&', $buildstring[1]), $buildstring);
+
+            if(isset($buildstring['tltype']) && allow_tile_colour_change($buildstring['tltype']) && isset($buildstring['tlstylecolour']))
+                {
+                $tile_custom_style .= get_tile_custom_style($buildstring);
+                }
+            }
+
+        if(in_array($tile['tile'], $hidden_tiles))
+            {
+            $contents_tile_class .= $hidden_tile_class;
+            }
+            ?>
 		<a 
 			<?php 
 			# Check link for external or internal
@@ -339,12 +402,16 @@ function get_default_dash()
 			class="HomePanel DashTile DashTileDraggable <?php echo $tile["allow_delete"]? "":"conftile";?>" 
 			id="tile<?php echo htmlspecialchars($tile["tile"]);?>"
 		>
-			<div id="contents_tile<?php echo htmlspecialchars($tile["tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>">
-				<?php if (strpos($tile["url"],"dash_tile.php")!==false) {
-                                # Only pre-render the title if using a "standard" tile and therefore we know the H2 will be in the target data.
-                                ?>
-                                <h2 class="title"><?php echo htmlspecialchars($tile["title"]);?></h2>
-                                <?php } ?>
+			<div id="contents_tile<?php echo htmlspecialchars($tile["tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo $contents_tile_class; ?> <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>" style="<?php echo $tile_custom_style; ?>">
+				<?php
+                if (strpos($tile["url"],"dash_tile.php")!==false)
+                    {
+                    # Only pre-render the title if using a "standard" tile and therefore we know the H2 will be in the target data.
+                    ?>
+                    <h2 class="title"><?php echo htmlspecialchars($tile["title"]);?></h2>
+                    <?php 
+                    }
+                    ?>
 				<p>Loading...</p>
 				<script>
 					height = jQuery("#contents_tile<?php echo htmlspecialchars($tile["tile"]);?>").height();
@@ -368,7 +435,7 @@ function get_default_dash()
 				});
 			}
 			function updateDashTileOrder(index,tile) {
-				jQuery.post( "<?php echo $baseurl?>/pages/ajax/dash_tile.php",{"tile":tile,"new_index":((index*10))});
+				jQuery.post( "<?php echo $baseurl?>/pages/ajax/dash_tile.php",{"tile":tile,"new_index":((index*10))<?php if(!is_null($user_group_id)) { echo ", \"selected_user_group\": {$user_group_id}";} ?>});
 			}
 			var dragging=false;
 				jQuery(function() {
@@ -387,7 +454,7 @@ function get_default_dash()
 				  	  },
 			          update: function(event, ui) {
 			          	nonDraggableTiles = jQuery(".HomePanel").length - jQuery(".DashTileDraggable").length;
-			          	newIndex = (ui.item.index() - nonDraggableTiles)+1;
+			          	newIndex = (ui.item.index() - nonDraggableTiles) + 1;
 			          	var id=jQuery(ui.item).attr("id").replace("tile","");
 			          	updateDashTileOrder(newIndex,id);
 			          }
@@ -442,7 +509,7 @@ function get_default_dash()
  */
 function get_managed_dash()
 	{
-	global $baseurl,$baseurl_short,$lang,$anonymous_login,$username,$dash_tile_shadows, $anonymous_default_dash, $userref;
+	global $baseurl,$baseurl_short,$lang,$anonymous_login,$username,$dash_tile_shadows, $anonymous_default_dash, $userref, $usergroup, $dash_tile_colour, $dash_tile_colour_options;
 	#Build Tile Templates
 	if(checkPermission_anonymoususer() && !$anonymous_default_dash)
         {
@@ -456,17 +523,36 @@ function get_managed_dash()
         }
     else
         {
-        $tiles = sql_query("SELECT dash_tile.ref AS 'tile',dash_tile.title,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,dash_tile.default_order_by as 'order_by'
-                       FROM dash_tile
-                       WHERE dash_tile.all_users=1
-                       AND (dash_tile.allow_delete=1
-                       OR (dash_tile.allow_delete=0
-                       AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile)))
-                       ORDER BY default_order_by");
+        $tiles = sql_query("SELECT dash_tile.ref AS 'tile', dash_tile.title, dash_tile.url, dash_tile.reload_interval_secs, dash_tile.link, dash_tile.default_order_by as 'order_by'
+                              FROM dash_tile
+                             WHERE dash_tile.all_users = 1
+                               AND (dash_tile.ref IN (SELECT dash_tile FROM usergroup_dash_tile WHERE usergroup_dash_tile.usergroup = '{$usergroup}')
+								OR dash_tile.ref NOT IN (SELECT distinct dash_tile FROM usergroup_dash_tile))
+                               AND (
+                                    dash_tile.allow_delete = 1
+                                    OR (
+                                        dash_tile.allow_delete = 0
+                                        AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile)
+                                       )
+                                   )
+                            ORDER BY default_order_by"
+                            );
         }
     
     foreach($tiles as $tile)
 		{
+        $tile_custom_style = '';
+
+        if($dash_tile_colour)
+            {
+            $buildstring = explode('?', $tile['url']);
+            parse_str(str_replace('&amp;', '&', $buildstring[1]), $buildstring);
+
+            if(isset($buildstring['tltype']) && allow_tile_colour_change($buildstring['tltype']) && isset($buildstring['tlstylecolour']))
+                {
+                $tile_custom_style .= get_tile_custom_style($buildstring);
+                }
+            }
 		?>
 		<a 
 			<?php 
@@ -487,7 +573,7 @@ function get_managed_dash()
 			class="HomePanel DashTile DashTileDraggable" 
 			id="tile<?php echo htmlspecialchars($tile["tile"]);?>"
 		>
-			<div id="contents_tile<?php echo htmlspecialchars($tile["tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>">
+			<div id="contents_tile<?php echo htmlspecialchars($tile["tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>" style="<?php echo $tile_custom_style; ?>">
 				<?php if (strpos($tile["url"],"dash_tile.php")!==false) 
 					{
                     # Only pre-render the title if using a "standard" tile and therefore we know the H2 will be in the target data.
@@ -519,67 +605,144 @@ function get_managed_dash()
  * Add a tile for a user group
  *
  */
-function add_usergroup_dash_tile($usergroup,$tile,$default_order_by)
-	{
-	$reorder=TRUE;
-	if(!is_numeric($usergroup) || !is_numeric($tile))
-		{return false;}
-	if(!is_numeric($default_order_by))
-		{
-		$default_order_by=append_usergroup_position($usergroup);
-		$reorder=FALSE;
-		}
-	$existing = sql_query("SELECT * FROM usergroup_dash_tile WHERE usergroup=".$usergroup." AND dash_tile=".$tile);
-	if(!$existing)
-		{
-		$result = sql_query("INSERT INTO usergroup_dash_tile (usergroup,dash_tile,default_order_by) VALUES (".$usergroup.",".$tile.",".$default_order_by.")");
-		}
-	else
-		{
-		return $existing;
-		}
-	if($reorder){reorder_usergroup_dash($usergroup);}
-	return true;
-	}
+function add_usergroup_dash_tile($usergroup, $tile, $default_order_by)
+    {
+    if(!is_numeric($usergroup) || !is_numeric($tile))
+        {
+        return false;
+        }
+
+    $reorder = true;
+    if(!is_numeric($default_order_by))
+        {
+        $default_order_by = append_usergroup_position($usergroup);
+        $reorder          = false;
+        }
+
+    $existing = sql_query("SELECT * FROM usergroup_dash_tile WHERE usergroup = '{$usergroup}' AND dash_tile = {$tile}");
+    if(!$existing)
+        {
+        $result = sql_query("INSERT INTO usergroup_dash_tile (usergroup, dash_tile, default_order_by) VALUES ('{$usergroup}', '{$tile}', '{$default_order_by}')");
+        }
+    else
+        {
+        return $existing;
+        }
+
+    if($reorder)
+        {
+        reorder_usergroup_dash($usergroup);
+        }
+
+    return true;
+    }
 
 /*
  * Get the position for a new tile at the end of the current usergroup tiles.
  * Returns the last position or the first position if no tiles found for this usergroup
  */
 function append_usergroup_position($usergroup)
-	{
-	$last_tile=sql_query("SELECT order_by FROM usergroup_dash_tile WHERE usergroup='".$usergroup."' ORDER BY default_order_by DESC LIMIT 1");
-	return isset($last_tile[0]["default_order_by"])?$last_tile[0]["order_by"]+10:10;
-	}
+    {
+    $last_tile = sql_query("SELECT order_by FROM usergroup_dash_tile WHERE usergroup = '{$usergroup}' ORDER BY default_order_by DESC LIMIT 1");
+
+    return isset($last_tile[0]['default_order_by']) ? $last_tile[0]['order_by'] + 10 : 10;
+    }
+
 function reorder_usergroup_dash($usergroup)
-	{
-	$usergroup_tiles = sql_query("SELECT usergroup_dash_tile.ref FROM usergroup_dash_tile LEFT JOIN dash_tile ON usergroup_dash_tile.dash_tile = dash_tile.ref WHERE usergroup_dash_tile.usergroup='".$usergroup."' ORDER BY usergroup_dash_tile.default_order_by");
-	$order_by=10 * count($usergroup_tiles);
-	for($i=count($usergroup_tiles)-1;$i>=0;$i--)
-		{
-		update_usergroup_dash_tile_order($usergroup,$usergroup_tiles[$i]["ref"],$order_by);
-		$order_by-=10;
-		}
-	}
-function update_usergroup_dash_tile_order($usergroup,$tile,$default_order_by)
-	{
-	sql_query("UPDATE usergroup_dash_tile SET default_order_by='".escape_check($default_order_by)."' WHERE usergroup='".escape_check($usergroup)."' and ref='".$tile."'");
-	}
+    {
+    $usergroup_tiles = sql_query("SELECT usergroup_dash_tile.ref FROM usergroup_dash_tile LEFT JOIN dash_tile ON usergroup_dash_tile.dash_tile = dash_tile.ref WHERE usergroup_dash_tile.usergroup = '{$usergroup}' ORDER BY usergroup_dash_tile.default_order_by");
+    $order_by        = 10 * count($usergroup_tiles);
 
-function build_usergroup_dash($user,$usergroup)
-	{
-	$usergroup_tiles = sql_query("SELECT dash_tile.ref AS 'tile',dash_tile.title,dash_tile.all_users,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,usergroup_dash_tile.ref as 'usergroup_tile',usergroup_dash_tile.default_order_by FROM usergroup_dash_tile JOIN dash_tile ON usergroup_dash_tile.dash_tile=dash_tile.ref WHERE usergroup_dash_tile.usergroup='".$usergroup."' ORDER BY usergroup_dash_tile.default_order_by");
-	$starting_order = append_user_position($user);
-	foreach($usergroup_tiles as $tile)
-		{
-		add_user_dash_tile($user,$tile,$starting_order);
-		$starting_order+=10;
-		}
-	}
-function get_usergroup_dash($usergroup)
-	{
+    for($i = count($usergroup_tiles) - 1; $i >= 0; $i--)
+        {
+        update_usergroup_dash_tile_order($usergroup, $usergroup_tiles[$i]['ref'], $order_by);
+        $order_by -= 10;
+        }
+    }
 
-	}
+function update_usergroup_dash_tile_order($usergroup, $tile, $default_order_by)
+    {
+    sql_query("UPDATE usergroup_dash_tile SET default_order_by = '{$default_order_by}' WHERE usergroup = '{$usergroup}' AND ref = '{$tile}'");
+    }
+
+function build_usergroup_dash($user_group, $user_id = 0)
+    {
+    $user_group_tiles = sql_array("SELECT dash_tile.ref AS `value` FROM usergroup_dash_tile JOIN dash_tile ON usergroup_dash_tile.dash_tile = dash_tile.ref WHERE usergroup_dash_tile.usergroup = '{$user_group}' ORDER BY usergroup_dash_tile.default_order_by");
+
+    // If client code has specified a user ID, then just add the tiles for it
+    if(is_numeric($user_id) && 0 < $user_id)
+        {
+        $starting_order = append_user_position($user_id);
+
+        foreach($user_group_tiles as $tile)
+            {
+            sql_query("DELETE FROM user_dash_tile WHERE user = '{$user_id}' AND dash_tile = {$tile}");
+
+            add_user_dash_tile($user_id, $tile, $starting_order);
+            $starting_order += 10;
+            }
+
+        return;
+        }
+
+    $user_list = sql_array("SELECT ref AS `value` FROM user WHERE usergroup = '{$user_group}'");
+    foreach($user_list as $user)
+        {
+        $starting_order  = append_user_position($user);
+
+        foreach($user_group_tiles as $tile)
+            {
+            sql_query("DELETE FROM user_dash_tile WHERE user = '{$user}' AND dash_tile = {$tile}");
+
+            add_user_dash_tile($user, $tile, $starting_order);
+            $starting_order += 10;
+            }
+        }
+
+    return;
+    }
+
+function get_tile_user_groups($tile_id)
+    {
+    return sql_array("SELECT usergroup AS `value` FROM usergroup_dash_tile WHERE dash_tile = '{$tile_id}';");
+    }
+
+
+function get_usergroup_available_tiles($user_group_id, $tile = '')
+    {
+    if(!is_numeric($user_group_id))
+        {
+        trigger_error('$user_group_id has to be a number');
+        }
+
+    $tile_sql = '';
+    if('' != $tile)
+        {
+        $tile_sql = "AND dt.ref = '" . escape_check($tile) . "'";
+        }
+
+    return sql_query("SELECT dt.ref, dt.ref AS `tile`, dt.title, dt.txt, dt.link, dt.url, dt.reload_interval_secs, dt.resource_count, dt.all_users, dt.allow_delete, dt.default_order_by, udt.order_by , 1 AS 'dash_tile' FROM dash_tile AS dt LEFT JOIN usergroup_dash_tile AS udt ON dt.ref = udt.dash_tile WHERE dt.all_users = 1 AND udt.usergroup = '{$user_group_id}' {$tile_sql} ORDER BY udt.default_order_by ASC");
+    }
+
+/**
+ * Get usergroup_dash_tile record
+ * 
+ * @param integer $tile_id
+ * @param integer $user_group_id
+ * 
+ * @return array
+ */
+ function get_usergroup_tile($tile_id, $user_group_id)
+    {
+    $return = sql_query("SELECT * FROM usergroup_dash_tile WHERE dash_tile = '" . escape_check($tile_id) . "' AND usergroup = '" . escape_check($user_group_id) . "'");
+
+    if(0 < count($return))
+        {
+        return $return[0];
+        }
+
+    return array();
+    }
 
 /*
  * User Dash Functions 
@@ -631,7 +794,7 @@ function add_user_dash_tile($user,$tile,$order_by)
   */
  function create_new_user_dash($user)
  	{
- 	$tiles = sql_query("SELECT dash_tile.ref as 'tile',dash_tile.title,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,dash_tile.default_order_by as 'order' FROM dash_tile WHERE dash_tile.all_users=1 AND (dash_tile.allow_delete=1 OR (dash_tile.allow_delete=0 AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile))) ORDER BY default_order_by");
+ 	$tiles = sql_query("SELECT dash_tile.ref as 'tile',dash_tile.title,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,dash_tile.default_order_by as 'order' FROM dash_tile WHERE dash_tile.all_users = 1 AND ref NOT IN (SELECT dash_tile FROM usergroup_dash_tile) AND (dash_tile.allow_delete=1 OR (dash_tile.allow_delete=0 AND dash_tile.ref IN (SELECT DISTINCT user_dash_tile.dash_tile FROM user_dash_tile))) ORDER BY default_order_by");
  	foreach($tiles as $tile)
  		{
  		add_user_dash_tile($user,$tile["tile"],$tile["order"]);
@@ -765,6 +928,7 @@ function get_user_available_tiles($user,$tile="null")
 						WHERE
 							user_dash_tile.user = '".$user."'
 					)
+                AND ref NOT IN (SELECT dash_tile FROM usergroup_dash_tile)
 				)
 			UNION
 				(
@@ -807,7 +971,7 @@ function get_user_available_tiles($user,$tile="null")
  */
 function get_user_dash($user)
 	{
-	global $baseurl,$baseurl_short,$lang,$dash_tile_shadows;
+	global $baseurl,$baseurl_short,$lang,$dash_tile_shadows,$help_modal, $dash_tile_colour, $dash_tile_colour_options;
 	#Build User Dash and recalculate order numbers on display
 	$user_tiles = sql_query("SELECT dash_tile.ref AS 'tile',dash_tile.title,dash_tile.all_users,dash_tile.url,dash_tile.reload_interval_secs,dash_tile.link,user_dash_tile.ref AS 'user_tile',user_dash_tile.order_by FROM user_dash_tile JOIN dash_tile ON user_dash_tile.dash_tile = dash_tile.ref WHERE user_dash_tile.user='".$user."' ORDER BY user_dash_tile.order_by");
 
@@ -816,6 +980,19 @@ function get_user_dash($user)
 		{
 		if($order != $tile["order_by"] || ($tile["order_by"] % 10) > 0){update_user_dash_tile_order($user,$tile["user_tile"],$order);}
 		$order+=10;
+
+        $tile_custom_style = '';
+
+        if($dash_tile_colour)
+            {
+            $buildstring = explode('?', $tile['url']);
+            parse_str(str_replace('&amp;', '&', $buildstring[1]), $buildstring);
+
+            if(isset($buildstring['tltype']) && allow_tile_colour_change($buildstring['tltype']) && isset($buildstring['tlstylecolour']))
+                {
+                $tile_custom_style .= get_tile_custom_style($buildstring);
+                }
+            }
 		?>
 		<a 
 			<?php 
@@ -832,12 +1009,12 @@ function get_user_dash($user)
 				}
 			?>
 			href="<?php echo parse_dashtile_link($link)?>" <?php echo $newtab ? "target='_blank'" : "";?> 
-			onClick="if(dragging){dragging=false;e.defaultPrevented}<?php echo $newtab? "": "return CentralSpaceLoad(this,true);";?>" 
+			onClick="if(dragging){dragging=false;e.defaultPrevented}<?php echo $newtab? "": "return " . ($help_modal && strpos($link,"pages/help.php")!==false?"ModalLoad(this,true);":"CentralSpaceLoad(this,true);");?>" 
 			class="HomePanel DashTile DashTileDraggable <?php echo ($tile['all_users']==1)? 'allUsers':'';?>"
 			tile="<?php echo $tile['tile']; ?>"
 			id="user_tile<?php echo htmlspecialchars($tile["user_tile"]);?>"
 		>
-			<div id="contents_user_tile<?php echo htmlspecialchars($tile["user_tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>">                  
+			<div id="contents_user_tile<?php echo htmlspecialchars($tile["user_tile"]);?>" class="HomePanelIN HomePanelDynamicDash <?php echo ($dash_tile_shadows)? "TileContentShadow":"";?>" style="<?php echo $tile_custom_style; ?>">
 				<script>
 				jQuery(function(){
 					var height = jQuery("#contents_user_tile<?php echo htmlspecialchars($tile["user_tile"]);?>").height();
@@ -1006,7 +1183,7 @@ function build_dash_tile_list($dtiles_available)
   		$buildstring = explode('?',$tile["url"]);
 		parse_str(str_replace("&amp;","&",$buildstring[1]),$buildstring);
   		?>
-  		<tr id="tile<?php echo $tile["ref"];?>">
+  		<tr id="tile<?php echo $tile["ref"];?>" <?php if(isset($buildstring["tltype"]) && $buildstring["tltype"]=="conf") {echo "class=\"conftile\"";} ?>>
   			<td>
   				<input 
   					type="checkbox" 
@@ -1019,10 +1196,10 @@ function build_dash_tile_list($dtiles_available)
   			</td>
   			<td>
   				<?php 
-  				if(isset($buildstring["tltype"]) && $buildstring["tltype"]=="conf" && $buildstring["tlstyle"]!="custm" && $buildstring["tlstyle"]!="pend")
-  					{echo $lang[$tile["title"]];}
+  				if(isset($buildstring["tltype"]) && $buildstring["tltype"]=="conf" && $buildstring["tlstyle"]!="custm" && $buildstring["tlstyle"]!="pend" && isset($lang[$tile["title"]]))
+  					{echo i18n_get_translated($lang[$tile["title"]]);}
   				else 
-  					{echo $tile["title"];}
+  					{echo i18n_get_translated($tile["title"]);}
   				?>
   			</td>
   			<td>
@@ -1043,11 +1220,11 @@ function build_dash_tile_list($dtiles_available)
   				
   				if(strlen($tile["txt"])>75)
   					{
-  					echo substr($tile["txt"],0,72)."...";
+  					echo substr(i18n_get_translated($tile["txt"]),0,72)."...";
   					}
   				else
   					{
-  					echo $tile["txt"];
+  					echo i18n_get_translated($tile["txt"]);
   					}
   				?>
   			</td>
@@ -1081,3 +1258,182 @@ function build_dash_tile_list($dtiles_available)
   		<?php
   		}
   	}
+
+/**
+* Check whether we allow a colour change of a tile from the interface.
+* At the moment it is only available for blank search tiles and text
+* text only tiles.
+* 
+* @param string $tile_type
+* @param string $tile_style Examples: thmbs, multi, blank, ftxt
+* 
+* @return boolean
+*/
+function allow_tile_colour_change($tile_type, $tile_style = '')
+    {
+    global $lang, $dash_tile_colour, $dash_tile_colour_options, $tile_styles;
+
+    $allowed_styles = array('blank', 'ftxt');
+
+    // Check a specific style for a type
+    if($dash_tile_colour && '' !== $tile_style && !in_array($tile_style, $allowed_styles))
+        {
+        return false;
+        }
+
+    // Is one of the allowed styles in the styles available for this tile type?
+    if($dash_tile_colour && 0 < count(array_intersect($tile_styles[$tile_type], $allowed_styles)))
+        {
+        return true;
+        }
+
+    return false;
+    }
+
+/**
+* Renders a new section to pick/ select a colour. User can either use the color
+* picker or select a colour from the ones already available (config option)
+* 
+* @param string $tile_style
+* @param string $tile_colour Hexadecimal code (without the # sign). Example: 0A8A0E
+* 
+* @return void
+*/
+function render_dash_tile_colour_chooser($tile_style, $tile_colour)
+    {
+    global $lang, $dash_tile_colour, $dash_tile_colour_options, $baseurl;
+    if('ftxt' == $tile_style)
+        {
+        ?>
+        <div class="Question">
+        <?php
+        }
+    else
+        {
+        ?>
+        <span id="tile_style_colour_chooser" style="display: none;">
+        <?php
+        }
+        ?>
+            <label class="stdwidth"><?php echo $lang['colour']; ?></label>
+    <?php
+    // Show either color picker OR a drop down selector
+    if(0 === count($dash_tile_colour_options))
+        {
+        ?>
+        <script src="<?php echo $baseurl; ?>/lib/spectrum/spectrum.js"></script>
+        <link rel="stylesheet" href="<?php echo $baseurl; ?>/lib/spectrum/spectrum.css" />
+        <input id="tile_style_colour" name="tlstylecolour" type="text" onchange="update_tile_preview_colour(this.value);" value="<?php echo $tile_colour; ?>">
+        <script>
+            jQuery('#tile_style_colour').spectrum({
+                showAlpha: true,
+                showInput: true,
+                clickoutFiresChange: true,
+                preferredFormat: 'rgb'
+            });
+        </script>
+        <?php
+        }
+    else
+        {
+        ?>
+        <select id="tile_style_colour" name="tile_style_colour" onchange="update_tile_preview_colour(this.value);">
+        <?php
+        foreach($dash_tile_colour_options as $dash_tile_colour_option_value => $dash_tile_colour_option_text)
+            {
+            ?>
+            <option value="<?php echo $dash_tile_colour_option_value; ?>"><?php echo $dash_tile_colour_option_text; ?></option>
+            <?php
+            }
+        ?>
+        </select>
+        <?php
+        }
+        ?>
+
+    <!-- Show/ hide colour picker/ selector -->
+    <script>
+        function update_tile_preview_colour(colour)
+            {
+            jQuery('#previewdashtile').css('background-color', '#' + colour);
+            }
+
+    <?php
+    if('ftxt' == $tile_style)
+        {
+        ?>
+        jQuery(document).ready(function() {
+            if(jQuery('#tile_style_colour').val() != '')
+                {
+                update_tile_preview_colour('<?php echo $tile_colour; ?>');
+                }
+        });
+        <?php
+        }
+    else
+        {
+        ?>
+        jQuery(document).ready(function() {
+            if(jQuery('#tile_style_<?php echo $tile_style; ?>').attr('checked'))
+                {
+                jQuery('#tile_style_colour_chooser').show();
+                update_tile_preview_colour('<?php echo $tile_colour; ?>');
+                }
+        });
+
+        jQuery('input:radio[name="tlstyle"]').change(function() {
+            if(jQuery(this).attr('checked') && jQuery(this).val() == '<?php echo $tile_style; ?>')
+                {
+                jQuery('#tile_style_colour_chooser').show();
+                }
+            else
+                {
+                jQuery('#tile_style_colour_chooser').hide();
+                jQuery('#tile_style_colour').val('');
+                jQuery('#tile_style_colour').removeAttr('style');
+                jQuery('#previewdashtile').removeAttr('style');
+                }
+        });
+        <?php
+        }
+        ?>
+    </script>
+    <?php
+    if('ftxt' == $tile_style)
+        {
+        ?>
+        </div>
+        <?php
+        }
+    else
+        {
+        ?>
+        </span>
+        <?php
+        }
+        ?>
+    <div class="clearerleft"></div>
+    <?php
+
+    return;
+    }
+
+function get_tile_custom_style($buildstring)
+    {
+    if (isset($buildstring['tlstylecolour']))
+        {
+        $return_value="background-color: ";
+        if (preg_match('/^[a-fA-F0-9]+$/',$buildstring['tlstylecolour']))
+            {
+            // this is a fix for supporting legacy hex values that do not have '#' at start
+            $return_value.='#';
+            }
+        $return_value.=$buildstring['tlstylecolour'] . ';';
+        return $return_value;
+        }
+    else
+        {
+        return '';
+        }
+    }
+

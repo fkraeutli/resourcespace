@@ -16,11 +16,6 @@ if(getval("loginmodal",""))
 if (getval("ajax","")=="" && !hook("replace_footer")) 
 	{ 
 	hook("beforefooter");
-	# Include theme bar?
-	if ($use_theme_bar && !in_array($pagename,array("search_advanced","login","preview","admin_header","user_password","user_request")) && ($loginterms==false))
-		{
-		?></td></tr></table><?php
-		}
 ?>
 <div class="clearer"></div>
 
@@ -41,7 +36,8 @@ if (getval("ajax","")=="" && !hook("replace_footer"))
 
 <?php hook("footertop"); ?>
 <?php
-$omit_footer_pages=array("login","user_request","user_password","preview_all","done","preview","change_language");
+$omit_footer_pages=array("login","user_request","user_password","preview_all","done","change_language");
+if(!$preview_header_footer){$omit_footer_pages[]="preview";}
 $modify_omit_footer_pages=hook("modify_omit_footer_pages","",array($omit_footer_pages));
 if(!empty($modify_omit_footer_pages))
 	{
@@ -54,7 +50,7 @@ if(!in_array($pagename,$omit_footer_pages) && ($loginterms==false))
 <!--Global Footer-->
 <div id="Footer">
 
-<?php if (getval("k","")=="") 
+<?php if ($k=="" || (isset($internal_share_access) && $internal_share_access)) 
 	{ ?>
 	<div id="FooterNavLeft" class="">
 	<span id="FooterLanguages">
@@ -69,7 +65,7 @@ if(!in_array($pagename,$omit_footer_pages) && ($loginterms==false))
 	<?php 
 	if (!hook("replacefooternavright"))
 		{
-		if ($about_link || $contact_link) 
+		if ($bottom_links_bar && ($about_link || $contact_link))
 			{ ?>
 			<div id="FooterNavRight" class="HorizontalNav HorizontalWhiteNav">
 			<ul>
@@ -356,7 +352,13 @@ if (isset($k) && $k!="" && isset($search) && !isset($usercollection))
 if (!hook("replacecdivrender"))
 	{
 	if ($collections_footer && !in_array($pagename,$omit_collectiondiv_load_pages) && !checkperm("b") && isset($usercollection)) 
-		{?>
+		{
+        // Footer requires restypes as a string because it is urlencoding them
+        if(isset($restypes) && is_array($restypes))
+            {
+            $restypes = implode(',', $restypes);
+            }
+            ?>
 		<div id="CollectionDiv" class="CollectBack AjaxCollect ui-layout-south"></div>
 
 		<script type="text/javascript">
@@ -428,7 +430,7 @@ if (!hook("replacecdivrender"))
 				}
 			});
 			window.onload = function() {
-				CollectionDivLoad('<?php echo $baseurl_short?>pages/collections.php?thumbs=<?php echo urlencode($thumbs); ?>&collection='+usercollection+'<?php echo (isset($k) ? "&k=".urlencode($k) : ""); ?>');
+				CollectionDivLoad('<?php echo $baseurl_short?>pages/collections.php?thumbs=<?php echo urlencode($thumbs); ?>&collection='+usercollection+'<?php echo (isset($k) ? "&k=".urlencode($k) : ""); ?>&order_by=<?php echo (isset($order_by) ? urlencode($order_by) : ""); ?>&sort=<?php echo (isset($sort) ? urlencode($sort) : ""); ?>&search=<?php echo (isset($search) ? urlencode($search) : ""); ?>&restypes=<?php echo (isset($restypes) ? urlencode($restypes) : "") ?>&archive=<?php echo (isset($archive) ? urlencode($archive) : "" ) ?>&daylimit=<?php echo (isset($daylimit) ? urlencode($daylimit) : "" ) ?>&offset=<?php echo (isset($offset) ? urlencode($offset) : "" );echo (isset($resources_count) ? "&resources_count=$resources_count" :""); ?>');
 				InitThumbs();
 			}
 	</script>
@@ -446,9 +448,9 @@ if (!hook("replacecdivrender"))
 <div id="modal_overlay" onClick="ModalClose();"></div>
 <div id="modal_outer">
 <div id="modal">
+</div>
+</div>
 <div id="modal_dialog" style="display:none;"></div>
-</div>
-</div>
 <script type="text/javascript">
 jQuery(window).bind('resize.modal', ModalCentre);
 </script>

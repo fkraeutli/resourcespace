@@ -6,7 +6,7 @@
  * @Subpackage Pages_Team
  */
 include "../../include/db.php";
-include "../../include/general.php";
+include_once "../../include/general.php";
 include "../../include/authenticate.php";if (!checkperm("u")) {exit ("Permission denied.");}
 include_once "../../include/collections_functions.php";
 
@@ -16,7 +16,7 @@ $order_by=getvalescaped("order_by","u.username");
 $group=getvalescaped("group",0);
 
 # Pager
-$per_page=getvalescaped("per_page_list",$default_perpage_list);setcookie("per_page_list",$per_page, 0, '', '', false, true);
+$per_page=getvalescaped("per_page_list",$default_perpage_list);rs_setcookie('per_page_list', $per_page);
 
 
 if (array_key_exists("find",$_POST)) {$offset=0;} # reset page counter when posting
@@ -87,7 +87,7 @@ include "../../include/header.php";
 	if($backlink!="")
 		{
 ?>	<p>
-		<a href='<?php echo rawurldecode($backlink); ?>'>&lt;&nbsp;<?php echo $lang['back']; ?></a>
+		<a href='<?php echo rawurldecode($backlink); ?>'><?php echo LINK_CARET_BACK ?><?php echo $lang['back']; ?></a>
 	</p>
 <?php
 		}
@@ -135,9 +135,6 @@ $atoz.="</div>";
 	<?php } ?>
 	<?php if ($per_page==99999){?><span class="Selected"><?php echo $lang["all"]?></span><?php } else { ?><a href="<?php echo $url; ?>&per_page_list=99999" onClick="return CentralSpaceLoad(this);"><?php echo $lang["all"]?></a><?php } ?>
 	</div></div> <?php pager(false); ?><div class="clearerleft"></div></div>
-
-<strong><?php echo $lang["total"] . ": " . count($users); ?> </strong><?php echo $lang["users"]; ?>
-<br />
 
 <div class="Listview">
 <?php if(!hook('overrideuserlist')):
@@ -196,12 +193,12 @@ for ($n=$offset;(($n<count($users)) && ($n<($offset+$per_page)));$n++)
 	<?php } ?>
 	<td><?php echo nicedate($users[$n]["created"]) ?></td>
 	<td><?php echo $users[$n]["approved"]?$lang["yes"]:$lang["no"] ?></td>
-	<td><?php echo nicedate($users[$n]["last_active"]) ?></td>
+	<td><?php echo nicedate($users[$n]["last_active"],true) ?></td>
 	<?php hook("additional_user_column");?>
 	<td><?php if (($usergroup==3) || ($users[$n]["usergroup"]!=3)) { ?><div class="ListTools">
-	<a href="<?php echo $baseurl ?>/pages/admin/admin_system_log.php?actasuser=<?php echo $users[$n]["ref"]?>&backurl=<?php echo urlencode($url . "&offset=" . $offset)?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["log"]?></a>
+	<a href="<?php echo $baseurl ?>/pages/admin/admin_system_log.php?actasuser=<?php echo $users[$n]["ref"]?>&backurl=<?php echo urlencode($url . "&offset=" . $offset)?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["log"]?></a>
 	&nbsp;
-	<a href="<?php echo $baseurl ?>/pages/team/team_user_edit.php?ref=<?php echo $users[$n]["ref"]?>&backurl=<?php echo urlencode($url . "&offset=" . $offset)?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["action-edit"]?></a>
+	<a href="<?php echo $baseurl ?>/pages/team/team_user_edit.php?ref=<?php echo $users[$n]["ref"]?>&backurl=<?php echo urlencode($url . "&offset=" . $offset)?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["action-edit"]?></a>
 	<?php hook("usertool")?>
 	</div><?php } ?>
 	</td>
@@ -213,33 +210,63 @@ for ($n=$offset;(($n<count($users)) && ($n<($offset+$per_page)));$n++)
 </table>
 <?php endif; // hook overrideuserlist ?>
 </div>
-<div class="BottomInpageNav"><?php pager(false); ?></div>
+<div class="BottomInpageNav">
+<div class="BottomInpageNavLeft">
+<strong><?php echo $lang["total"] . ": " . count($users); ?> </strong><?php echo $lang["users"]; ?>
 </div>
+
+<?php pager(false); ?></div>
+</div>
+
+
+
 
 <?php if(!$team_user_filter_top){show_team_user_filter_search();}?>
 
-<?php if(!hook("replace_create_user")){?>
+<?php
+if(!hook("replace_create_user"))
+    {
+    ?>
+    <div class="BasicsBox">
+        <form method="post" action="<?php echo $baseurl_short?>pages/team/team_user.php">
+    		<div class="Question">
+    			<label for="newuser"><?php echo $lang["createuserwithusername"]?></label>
+    			<div class="tickset">
+    			 <div class="Inline"><input type=text name="newuser" id="newuser" maxlength="100" class="shrtwidth" /></div>
+    			 <div class="Inline"><input name="Submit" type="submit" value="&nbsp;&nbsp;<?php echo $lang["create"]?>&nbsp;&nbsp;" /></div>
+    			</div>
+    			<div class="clearerleft"> </div>
+    		</div>
+    	</form>
+    </div>
+    <?php
+    }
+
+    hook('render_options_to_create_users');
+    
+if ($user_purge)
+	{
+	?>
+	<div class="BasicsBox">
+	<div class="Question"><label><?php echo $lang["purgeusers"]?></label>
+	<div class="Fixed"><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl ?>/pages/team/team_user_purge.php"><?php echo LINK_CARET ?><?php echo $lang["purgeusers"]?></a></div>
+	<div class="clearerleft"> </div></div>
+	</div>
+	<?php
+	}
+?>
+
+<?php if (!hook("replaceusersonline")) { ?>
 <div class="BasicsBox">
-    <form method="post" action="<?php echo $baseurl_short?>pages/team/team_user.php">
-		<div class="Question">
-			<label for="newuser"><?php echo $lang["createuserwithusername"]?></label>
-			<div class="tickset">
-			 <div class="Inline"><input type=text name="newuser" id="newuser" maxlength="100" class="shrtwidth" /></div>
-			 <div class="Inline"><input name="Submit" type="submit" value="&nbsp;&nbsp;<?php echo $lang["create"]?>&nbsp;&nbsp;" /></div>
-			</div>
-			<div class="clearerleft"> </div>
-		</div>
-	</form>
-</div>
-<?php } ?>
-
-
-<div class="BasicsBox">
-<div class="Question"><label><?php echo $lang["purgeusers"]?></label>
-<div class="Fixed"><a onClick="return CentralSpaceLoad(this,true);" href="<?php echo $baseurl ?>/pages/team/team_user_purge.php">&gt;&nbsp;<?php echo $lang["purgeusers"]?></a></div>
-<div class="clearerleft"> </div></div>
-</div>
-
+<div class="Question"><label><?php echo $lang["usersonline"]?></label>
+<div class="Fixed">
+<?php
+$active=get_active_users();
+for ($n=0;$n<count($active);$n++) {if($n>0) {echo", ";}echo "<b>" . $active[$n]["username"] . "</b> (" . $active[$n]["t"] . ")";}
+?>
+</div><div class="clearerleft"> </div></div></div>	
+<?php } // end hook("replaceusersonline")
+?>
 
 
 <?php

@@ -140,7 +140,7 @@ if (!hook("renderresultlargethumb"))
 						$result[$n]['user_rating']=0;
 						}
 					$modified_user_rating=hook("modifyuserrating");
-					if ($modified_user_rating)
+					if ($modified_user_rating!='')
 						{$result[$n]['user_rating']=$modified_user_rating;}
 					?>
 					<div  
@@ -196,7 +196,7 @@ if (!hook("renderresultlargethumb"))
 					{
 					if (!hook("replaceresourcepanelinfolarge"))
 						{ ?>
-						<div class="ResourcePanelInfo">
+						<div class="ResourcePanelInfo ResourceTypeField<?php echo $df[$x]['ref']?>">
 							<div class="extended">
 								<?php 
 								if ($x==0)
@@ -229,7 +229,7 @@ if (!hook("renderresultlargethumb"))
 					{ 
 					if (!hook("replaceresourcepanelinfolargenormal"))
 						{ ?>
-						<div class="ResourcePanelInfo">
+						<div class="ResourcePanelInfo ResourceTypeField<?php echo $df[$x]['ref']?>">
 							<?php 
 							if ($x==0)
 								{ // add link if necessary ?>
@@ -258,188 +258,53 @@ if (!hook("renderresultlargethumb"))
 			$df=$df_normal;
 			?>
 			<div class="ResourcePanelIcons">
-				<?php 
+				<?php
+				
+				if(!hook("xlthumbscheckboxes"))
+					{
+					if ($use_checkboxes_for_selection)
+						{
+						?>
+							<input 
+							type="checkbox" 
+							id="check<?php echo htmlspecialchars($ref)?>" 
+							class="checkselect" 
+							<?php 
+							if (in_array($ref,$collectionresources))
+								{ ?>
+								checked
+								<?php 
+								} ?> 
+							onclick="if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')=='checked'){ AddResourceToCollection(event,<?php echo htmlspecialchars($ref)?>); } else if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')!='checked'){ RemoveResourceFromCollection(event,<?php echo htmlspecialchars($ref)?>); }"
+					>
+					&nbsp;
+						
+						<?php
+						} 
+									
+					else
+						{
+						?>
+						<input type="checkbox" style="opacity: 0;">
+						<?php
+						}
+							
+					} # end hook xlthumbscheckboxes
+				
+				
+				
 				if ($display_resource_id_in_thumbnail && $ref>0) 
 					{ echo htmlspecialchars($ref); } 
 				else 
 					{ ?>&nbsp;<?php }	
 	    		if (!hook("replaceresourcetoolsxl"))
-	    			{?>
-	    			<!-- Preview icon -->
-	    			<?php if (!hook("replacefullscreenpreviewicon"))
-	    				{
-						if ($result[$n]["has_image"]==1)
-							{ ?>
-							<span class="IconPreview">
-								<a 
-									onClick="return CentralSpaceLoad(this,true);" 
-									href="<?php echo $baseurl_short?>pages/preview.php?from=search&amp;ref=<?php echo urlencode($ref)?>&amp;ext=<?php echo $result[$n]["preview_extension"]?>&amp;search=<?php echo urlencode($search)?>&amp;offset=<?php echo urlencode($offset)?>&amp;order_by=<?php echo urlencode($order_by)?>&amp;sort=<?php echo urlencode($sort)?>&amp;archive=<?php echo urlencode($archive)?>&amp;k=<?php echo urlencode($k)?>" 
-									title="<?php echo $lang["fullscreenpreview"]?>"
-								>
-									<img 
-										src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-										alt="<?php echo $lang["fullscreenpreview"]?>" 
-										width="22" 
-										height="12"
-									/>
-								</a>
-							</span>
-							<?php 
-							$showkeypreview = true; 
-							}
-						} /* end hook replacefullscreenpreviewicon */?>
-					<!-- Add to collection icon -->
-					<?php 
-					if(!hook("iconcollect"))
-						{
-						if (!checkperm("b") && $k=="" && !$use_checkboxes_for_selection) 
-							{ ?>
-							<span class="IconCollect">
-								<?php echo add_to_collection_link($ref,$search)?>
-									<img 
-										src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-										alt="" 
-										width="22" 
-										height="12"
-									/>
-								</a>
-							</span>
-							<?php 
-							$showkeycollect = true; 
-							}
-						} # end hook iconcollect ?>
-
-					<!-- Remove from collection icon -->
-					<?php 
-					if (!checkperm("b") && substr($search,0,11)=="!collection" && $k=="" && !$use_checkboxes_for_selection) 
-						{
-						if ($search=="!collection".$usercollection)
-							{?>
-							<span class="IconCollectOut">
-								<?php echo remove_from_collection_link($ref,$search)?>
-									<img 
-										src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-										alt="" 
-										width="22" 
-										height="12" 
-									/>
-								</a>
-							</span>
-							<?php 
-							$showkeycollectout = true;
-							}
-						} ?>
-
-					<!-- Email icon -->
-					<?php 
-					if(!hook("iconemail")) 
-						{
-						if ($allow_share && $k=="") 
-							{ ?>
-							<span class="IconEmail">
-								<a 
-									href="<?php echo $baseurl_short?>pages/resource_share.php?ref=<?php echo urlencode($ref)?>&amp;search=<?php echo urlencode($search)?>&amp;offset=<?php echo urlencode($offset)?>&amp;order_by=<?php echo urlencode($order_by)?>&amp;sort=<?php echo urlencode($sort)?>&amp;archive=<?php echo urlencode($archive)?>&amp;k=<?php echo urlencode($k)?>"   
-									onClick="return CentralSpaceLoad(this,true);" 
-									title="<?php echo $lang["emailresourcetitle"]?>"
-								>
-									<img 
-										src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-										alt="" 
-										width="16" 
-										height="12" 
-									/>
-								</a>
-							</span>
-							<?php 
-							$showkeyemail = true;
-							}
-						} ?>
-			<!-- Edit icon -->
-			<?php
-			// The permissions check here is intentionally more basic. It doesn't check edit_filter as this would be computationally intensive
-			// when displaying many resources. As such this is a convenience feature for users that have system-wide edit access to the given
-			// access level.
-			if($search_results_edit_icon && checkperm("e" . $result[$n]["archive"]) && !hook("iconedit")) 
-				{ 
-				if ($allow_share && $k=="") 
-					{ ?>
-					<span class="IconEdit">
-						<a 
-							href="<?php echo str_replace("view.php","edit.php",$url) ?>"  
-							onClick="return <?php echo ($resource_view_modal?"Modal":"CentralSpace") ?>Load(this,true);" 
-							title="<?php echo $lang["editresource"]?>"
-						>
-							<img 
-								src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-								alt="" 
-								width="16" 
-								height="12" 
-							/>
-						</a>
-					</span>
-					<?php
-					$showkeyedit = true;
-					}
-				} ?>	
-					<!-- Star icon -->
-					<?php 
-					if (isset($result[$n][$rating]) && $result[$n][$rating]>0) 
-						{ ?>
-						<div class="IconStar"></div>
-						<?php 
-						$showkeystar = true;
-						} ?>
-
-					<!-- Collection comment icon -->
-					<?php 
-					if ($k=="")
-						{
-						if (($collection_reorder_caption || $collection_commenting) && (substr($search,0,11)=="!collection")) 
-							{ ?>
-							<span class="IconComment">
-								<a 
-									href="<?php echo $baseurl_short?>pages/collection_comment.php?ref=<?php echo urlencode($ref)?>&amp;collection=<?php echo urlencode(substr($search,11))?>"  
-									onClick="return CentralSpaceLoad(this,true);" 
-									title="<?php echo $lang["addorviewcomments"]?>"
-								>
-									<img 
-										src="<?php echo $baseurl_short?>gfx/interface/sp.gif" 
-										alt="" 
-										width="14" 
-										height="12" 
-									/>
-								</a>
-							</span>
-							<?php 
-							$showkeycomment = true;
-							}	
-						} 
-					hook("xlargesearchicon");?>
-					<div class="clearer"></div>
-
-					<!-- Checkboxes -->
-					<?php 
-					if(!hook("thumbscheckboxes"))
-						{
-						if ($use_checkboxes_for_selection)
-							{ ?>
-							<input 
-								type="checkbox" 
-								id="check<?php echo htmlspecialchars($ref)?>" 
-								class="checkselect" 
-								<?php 
-								if (in_array($ref,$collectionresources))
-									{ ?>checked<?php } 
-									?> 
-								onclick="if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')=='checked') { AddResourceToCollection(event,<?php echo htmlspecialchars($ref)?>); } else if (jQuery('#check<?php echo htmlspecialchars($ref)?>').attr('checked')!='checked'){ RemoveResourceFromCollection(event,<?php echo htmlspecialchars($ref)?>); }"
-							>
-							<?php 
-							}
-						} # end hook thumbscheckboxes
-					} // end hook replaceresourcetoolsxl ?>
+	    			{
+				include "resource_tools.php";
+				} // end hook replaceresourcetoolsxl
+				?>
 			</div>
 		</div>
-		<div class="PanelShadow"></div>
+		
 	</div>
  	<?php 
  	} # end hook renderresultlargethumb

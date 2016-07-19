@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; if (!checkperm("a")) {exit("Access denied.");}
 include "../include/header.php";
 
@@ -110,12 +110,6 @@ if (ResolveKB($upload_max_filesize)<(100*1024)) {$result=$lang["status-warning"]
 $success=is_writable($storagedir);
 if ($success===false) {$result=$lang["status-fail"] . ": " . $lang["nowriteaccesstofilestore"];} else {$result=$lang["status-ok"];}
 ?><tr><td colspan="2"><?php echo $lang["writeaccesstofilestore"] ?></td><td><b><?php echo $result?></b></td></tr><?php
-
-# Check write access to plugins folder
-$success=is_writable(dirname(__FILE__) . "/../plugins");
-if ($success===false) {$result=$lang["status-fail"] . ": " . $lang["nowriteaccesstoplugins"];} else {$result=$lang["status-ok"];}
-?><tr><td colspan="2"><?php echo $lang["writeaccesstoplugins"] ?></td><td><b><?php echo $result?></b></td></tr><?php
-
 
 # Check write access to homeanim (if transform plugin is installed)
 if (in_array("transform",$plugins)){

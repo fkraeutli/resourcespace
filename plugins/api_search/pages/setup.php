@@ -5,7 +5,7 @@
 
 // Do the include and authorization checking ritual -- don't change this section.
 include '../../../include/db.php';
-include '../../../include/general.php';
+include_once '../../../include/general.php';
 include '../../../include/authenticate.php'; if (!checkperm('a')) {exit ($lang['error-permissiondenied']);}
 include '../../../include/search_functions.php';
 
@@ -15,8 +15,8 @@ $plugin_page_heading = $lang['api_search_configuration'];
 
 // Build the $page_def array of descriptions of each configuration variable the plugin uses.
 $result=do_search('','','relevance',0,1);
+$list="";
 if (isset($result[0])){
-	$list="";
 	foreach ($result[0] as $key=>$value){
 		$list.=$key.", ";
 	}

@@ -1,6 +1,6 @@
 <?php 
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php"; if (checkperm("b")){exit("Permission denied");}
 #if (!checkperm("s")) {exit ("Permission denied.");}
 include_once "../include/collections_functions.php";
@@ -9,12 +9,12 @@ include "../include/resource_functions.php";
 include "../include/render_functions.php";
 
 $offset=getvalescaped("offset",0);
-$find=getvalescaped("find",getvalescaped("saved_find",""));setcookie("saved_find",$find, 0, '', '', false, true);
-$col_order_by=getvalescaped("col_order_by",getvalescaped("saved_col_order_by","created"));setcookie("saved_col_order_by",$col_order_by, 0, '', '', false, true);
-$sort=getvalescaped("sort",getvalescaped("saved_col_sort","ASC"));setcookie("saved_col_sort",$sort, 0, '', '', false, true);
+$find=getvalescaped("find",getvalescaped("saved_find",""));rs_setcookie('saved_find', $find);
+$col_order_by=getvalescaped("col_order_by",getvalescaped("saved_col_order_by","created"));rs_setcookie('saved_col_order_by', $col_order_by);
+$sort=getvalescaped("sort",getvalescaped("saved_col_sort","ASC"));rs_setcookie('saved_col_sort', $sort);
 $revsort = ($sort=="ASC") ? "DESC" : "ASC";
 # pager
-$per_page=getvalescaped("per_page_list",$default_perpage_list,true);setcookie("per_page_list",$per_page, 0, '', '', false, true);
+$per_page=getvalescaped("per_page_list",$default_perpage_list,true);rs_setcookie('per_page_list', $per_page);
 
 $collection_valid_order_bys=array("fullname","name","ref","count","public");
 $modified_collection_valid_order_bys=hook("modifycollectionvalidorderbys");
@@ -288,24 +288,7 @@ $url=$baseurl_short."pages/collection_manage.php?paging=true&col_order_by=".urle
 <input type=hidden name="remove" id="collectionremove" value="">
 <input type=hidden name="add" id="collectionadd" value="">
 
-<?php
 
-// count how many collections are owned by the user versus just shared, and show at top
-$mycollcount = 0;
-$othcollcount = 0;
-for($i=0;$i<count($collections);$i++){
-	if ($collections[$i]['user'] == $userref){
-		$mycollcount++;
-	} else {
-		$othcollcount++;
-	}
-}
-
-$collcount = count($collections);
-echo $collcount==1 ? $lang["total-collections-1"] : str_replace("%number", $collcount, $lang["total-collections-2"]);
-echo " " . ($mycollcount==1 ? $lang["owned_by_you-1"] : str_replace("%mynumber", $mycollcount, $lang["owned_by_you-2"])) . "<br />";
-# The number of collections should never be equal to zero.
-?>
 
 <div class="Listview">
 <table border="0" cellspacing="0" cellpadding="0" class="ListviewStyle">
@@ -333,7 +316,7 @@ echo " " . ($mycollcount==1 ? $lang["owned_by_you-1"] : str_replace("%mynumber",
 for ($n=$offset;(($n<count($collections)) && ($n<($offset+$per_page)));$n++)
 	{
     $colusername=$collections[$n]['fullname'];
-
+    $count_result = $collections[$n]["count"];
 	?><tr <?php hook("collectionlistrowstyle");?>>
 	<td class="name"><div class="ListTitle">
 		<a <?php if ($collections[$n]["public"]==1 && (strlen($collections[$n]["theme"])>0)) { ?>style="font-style:italic;"<?php } ?> href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode("!collection" . $collections[$n]["ref"])?>" onClick="return CentralSpaceLoad(this);"><?php echo highlightkeywords(i18n_get_collection_name($collections[$n]),$find) ?></a></div></td>
@@ -379,11 +362,34 @@ if (!hook('collectionaccessmode')) {
 </div>
 
 </form>
-<div class="BottomInpageNav"><?php pager(false); ?></div>
+<div class="BottomInpageNav">
+<div class="BottomInpageNavLeft">
+<?php
+
+// count how many collections are owned by the user versus just shared, and show at top
+$mycollcount = 0;
+$othcollcount = 0;
+for($i=0;$i<count($collections);$i++){
+	if ($collections[$i]['user'] == $userref){
+		$mycollcount++;
+	} else {
+		$othcollcount++;
+	}
+}
+
+$collcount = count($collections);
+echo $collcount==1 ? $lang["total-collections-1"] : str_replace("%number", $collcount, $lang["total-collections-2"]);
+echo " " . ($mycollcount==1 ? $lang["owned_by_you-1"] : str_replace("%mynumber", $mycollcount, $lang["owned_by_you-2"])) . "<br />";
+# The number of collections should never be equal to zero.
+?>
+</div>
+
+<?php pager(false); ?><div class="clearerleft"></div></div>
+
 </div>
 
 <!--Create a collection-->
-<?php if ($collection_allow_creation) { ?>
+<?php if ($collection_allow_creation && !hook("replacecollectionmanagecreatenew")) { ?>
 	<div class="BasicsBox">
 		<h1><?php echo $lang["createnewcollection"]?></h1>
 		<p class="tight"><?php echo text("newcollection")?></p>
@@ -401,20 +407,23 @@ if (!hook('collectionaccessmode')) {
 <?php } ?>
  
 <!--Find a collection-->
-<?php if (!$public_collections_header_only){?>
-<?php if($enable_public_collections){?>
+<?php if (!$public_collections_header_only && $enable_public_collections && !hook('replacecollectionmanagepublic')){?>
 <div class="BasicsBox">
     <h1><?php echo $lang["findpubliccollection"]?></h1>
     <p class="tight"><?php echo text("findpublic")?></p>
-    <p><a href="<?php echo $baseurl_short?>pages/collection_public.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["findpubliccollection"]?>&nbsp;&gt;</a></p>
+    <p><?php echo LINK_CARET ?><a href="<?php echo $baseurl_short?>pages/collection_public.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["findpubliccollection"]?></a></p>
 </div>
 <?php } ?>
-<?php } ?>
-<div class="BasicsBox">
-    <h1><?php echo $lang["view_shared_collections"]?></h1>
-    <p><a href="<?php echo $baseurl_short?>pages/view_shares.php" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["view_shared_collections"]?></a></p>
-</div>
-<?php
+
+<?php if(!hook('replacecollectionmanageshared'))
+	{
+	?>
+	<div class="BasicsBox">
+		<h1><?php echo $lang["view_shared_collections"]?></h1>
+		<p><a href="<?php echo $baseurl_short?>pages/view_shares.php" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["view_shared_collections"]?></a></p>
+	</div>
+	<?php
+	}
 
 include "../include/footer.php";
 ?>

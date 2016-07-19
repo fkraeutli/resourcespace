@@ -1,6 +1,6 @@
 <?php
 include "../include/db.php";
-include "../include/general.php";
+include_once "../include/general.php";
 include "../include/authenticate.php";
 include_once "../include/collections_functions.php";
 include_once "../include/resource_functions.php";
@@ -8,9 +8,9 @@ include_once "../include/render_functions.php";
 include_once "../include/search_functions.php";
 
 global $default_perpage_list;
-$themes_order_by=getvalescaped("themes_order_by",getvalescaped("saved_themes_order_by","name"));setcookie("saved_themes_order_by",$themes_order_by, 0, '', '', false, true);
-$sort=getvalescaped("sort",getvalescaped("saved_themes_sort","ASC"));setcookie("saved_themes_sort",$sort, 0, '', '', false, true);
-$per_page=getvalescaped("per_page_list",$default_perpage_list,true);setcookie("per_page_list",$per_page, 0, '', '', false, true);
+$themes_order_by=getvalescaped("themes_order_by",getvalescaped("saved_themes_order_by","name"));rs_setcookie('saved_themes_order_by', $themes_order_by);
+$sort=getvalescaped("sort",getvalescaped("saved_themes_sort","ASC"));rs_setcookie('saved_themes_sort', $sort);
+$per_page=getvalescaped("per_page_list",$default_perpage_list,true);rs_setcookie('per_page_list', $per_page);
 $simpleview=$themes_simple_view || getval("simpleview","")=="true";
 
 hook("themeheader");
@@ -20,18 +20,44 @@ function DisplayTheme($themes=array(), $simpleview=false)
 	{
 	if($simpleview)
 		{
-		global $baseurl_short;
+		global $baseurl_short, $themecount, $themes_simple_images;
 		$getthemes=get_themes($themes);
-		# Themes
+		# 
 		for ($m=0;$m<count($getthemes);$m++)
-			{		
+			{
+			$theme_image_path="";
+			if($themes_simple_images)
+				{
+				$theme_images=get_theme_image($themes,$getthemes[$m]["ref"]);
+				if(is_array($theme_images) && count($theme_images)>0)
+					{
+					foreach($theme_images as $theme_image)
+						{
+						if(file_exists(get_resource_path($theme_image,true,"pre",false)))
+							{
+							$theme_image_path=get_resource_path($theme_image,false,"pre",false);
+							$theme_image_detail= get_resource_data($theme_image);
+							break;
+							}
+						}
+					}
+				}
 			?>				
-			<a href="<?php echo $baseurl_short?>pages/search.php?search=!collection<?php echo $getthemes[$m]["ref"]?>" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="advertising_tile_<?php echo $getthemes[$m]["ref"]; ?>">
-			<div class="FeaturedSimpleTile">
-				<div id="FeaturedSimpleTileContents_<?php echo $getthemes[$m]["ref"] ; ?>"  class="HomePanelIN FeaturedSimpleTileContents" >	
-					<h2><?php echo i18n_get_collection_name($getthemes[$m])?></h2>
-				</div>			
-			</div>			
+			<a href="<?php echo $baseurl_short?>pages/search.php?search=!collection<?php echo $getthemes[$m]["ref"]?>" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel FeaturedSimpleLink HomePanel DashTile" id="featured_tile_<?php echo $getthemes[$m]["ref"]; ?>">
+				<div id="contents_feature_tile_<?php echo $getthemes[$m]["ref"]; ?>" class="HomePanelIN TileContentShadow FeaturedSimpleTile"
+				<?php if($theme_image_path!="")
+							{	
+							?>
+							style="background: url(<?php echo $theme_image_path; ?>);
+							background-size: cover;"							
+							<?php
+							}
+							?>
+							>
+				<div id="FeaturedSimpleTileContents_<?php echo $getthemes[$m]["ref"] ; ?>"  class="HomePanelIN FeaturedSimpleTileContents TileContentShadow">
+				<h2><?php echo i18n_get_collection_name($getthemes[$m])?></h2>
+				</div>
+				</div>		
 			</a>			
 			<?php
 			}
@@ -41,7 +67,7 @@ function DisplayTheme($themes=array(), $simpleview=false)
 	else
 		{
 		global $theme_direct_jump,$themes_column_sorting,$themes_ref_column,$themes_date_column,$baseurl_short,$baseurl,
-			   $default_perpage_list,$collection_prefix,$revsort,$sort,$find,$getthemes,$m,$lang,$flag_new_themes,
+			   $default_perpage_list,$collection_prefix,$revsort,$sort,$find,$getthemes,$m,$lang,$flag_new_themes,$flag_new_themes_age,
 			   $contact_sheet,$theme_images,$allow_share,$zipcommand,$collection_download,$theme_images_align_right,
 			   $themes_category_split_pages,$themes_category_split_pages_parents,$collections_compact_style,$pagename,
 			   $show_edit_all_link,$preview_all,$userref,$collection_purge,$themes_category_split_pages,
@@ -173,14 +199,14 @@ function DisplayTheme($themes=array(), $simpleview=false)
 							?>
 							
 							</td><tr><td style="margin:0px;padding:0px;">
-							<a href="<?php echo $baseurl_short?>pages/theme_category_share.php?<?php echo $linkparams?>"  onClick="return CentralSpaceLoad(this,true);"><?php echo "> " . $lang["share"] . "</a>";
+							<a href="<?php echo $baseurl_short?>pages/theme_category_share.php?<?php echo $linkparams?>"  onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET . $lang["share"] . "</a>";
 							}
 						hook("themeaction");
 						
 						if ($enable_theme_category_edit && checkperm("t"))
 							{
 							?>
-							<a href="<?php echo $baseurl_short?>pages/theme_edit.php?<?php echo $linkparams . "lastlevelchange=" . $lastlevelchange?>" onClick="return CentralSpaceLoad(this,true);"><?php echo "> " . $lang["action-edit"] . "</a>";
+							<a href="<?php echo $baseurl_short?>pages/theme_edit.php?<?php echo $linkparams . "lastlevelchange=" . $lastlevelchange?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET . $lang["action-edit"] . "</a>";
 							}
 						}
 					}
@@ -214,7 +240,14 @@ function DisplayTheme($themes=array(), $simpleview=false)
 				?>
 				<tr <?php hook("collectionlistrowstyle");?>>
 				<td class="name" width="50%"><div class="ListTitle"><a href="<?php echo $baseurl_short?>pages/search.php?search=!collection<?php echo $getthemes[$m]["ref"]?>&bc_from=themes"  title="<?php echo $lang["collectionviewhover"]?>" onClick="return CentralSpaceLoad(this,true);"><?php echo i18n_get_collection_name($getthemes[$m])?></a>
-				<?php if ($flag_new_themes && (time()-strtotime($getthemes[$m]["created"]))<(60*60*24*14)) { ?><div class="NewFlag"><?php echo $lang["newflag"]?></div><?php } ?>
+				<?php
+                if($flag_new_themes && (time() - strtotime($getthemes[$m]['created'])) < (60 * 60 * 24 * $flag_new_themes_age))
+                    {
+                    ?>
+                    <div class="NewFlag"><?php echo $lang['newflag']; ?></div>
+                    <?php
+                    }
+                    ?>
 				</div></td>
 				<?php if ($themes_ref_column){?>
 				<td class="ref"><?php echo $getthemes[$m]["ref"];?></td>
@@ -240,7 +273,6 @@ function DisplayTheme($themes=array(), $simpleview=false)
 			</div>
 	
 			</div>
-			<div class="PanelShadow"> </div>
 			</div>
 			<?php
 			}
@@ -341,8 +373,8 @@ if ($themes_category_split_pages && isset($themes[0]) && !$theme_direct_jump)
 		$link.="=". urlencode($themes[$x]);
 		if($simpleview)
 		{$link.="&simpleview=true";}
-		echo "&gt;&nbsp;";
-		?><a href="<?php echo $link ?>" onClick="return CentralSpaceLoad(this,true);"><span><?php echo htmlspecialchars($themes[$x]) ?>&nbsp;</span></a><?php
+		echo LINK_CARET;
+		?><a href="<?php echo $link ?>" onClick="return CentralSpaceLoad(this,true);"><span><?php echo str_replace("*","",i18n_get_collection_name($themes[$x])) ?>&nbsp;</span></a><?php
 		}
 	echo "</div>";
 
@@ -359,9 +391,6 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 	#
 	# This option shows the theme categories / subcategories as a simple list, instead of using dropdown boxes.
 	#
-
-	?>
-	<?php
 	if (count($themes)<$theme_category_levels){
 	$headers=get_theme_headers($themes);
 	if (count($headers)>0)
@@ -372,6 +401,25 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 			for ($n=0;$n<count($headers);$n++)
 				{
 				$link=$baseurl_short."pages/themes.php?theme1=" . urlencode((!isset($themes[0]))? $headers[$n]:$themes[0]) . "&simpleview=true";
+				$theme_image_path="";
+				if($themes_simple_images)
+					{
+					$targettheme=array_merge($themes,array($headers[$n]));
+					$theme_images=get_theme_image($targettheme);
+					if(is_array($theme_images) && count($theme_images)>0)
+						{
+						foreach($theme_images as $theme_image)
+							{
+							if(file_exists(get_resource_path($theme_image,true,"pre",false)))
+								{
+								$theme_image_path=get_resource_path($theme_image,false,"pre",false);
+								
+								$theme_image_detail= get_resource_data($theme_image);
+								break;
+								}
+							}
+						}
+					}
 				for ($x=2;$x<count($themes)+2;$x++)
 					{
 					if (isset($headers[$n]))
@@ -380,13 +428,24 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 						}
 					}
 					?>		
-				<a href="<?php echo $link; ?>" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="advertising_tile_<?php echo $headers[$n];?>">
-					<div class="FeaturedSimpleTile">
-						<div id="FeaturedSimpleTileContents_<?php echo $headers[$n] ; ?>"  class="HomePanelIN FeaturedSimpleTileContents" >	
-							<h2><?php echo htmlspecialchars(i18n_get_translated(str_replace("*","",$headers[$n])))?></h2>
-						</div>			
-					</div>			
-				</a>				
+					
+				<a href="<?php echo $link; ?>" onclick="return CentralSpaceLoad(this,true);"  class="FeaturedSimplePanel FeaturedSimpleLink HomePanel DashTile" id="category_tile_<?php echo htmlspecialchars($headers[$n]);?>">
+					<div id="contents_user_tile<?php echo htmlspecialchars($headers[$n]);?>" class="HomePanelIN TileContentShadow FeaturedSimpleTile"
+						<?php if($theme_image_path!="")
+							{	
+							?>
+							style="background: url(<?php echo $theme_image_path; ?>);background-size: cover;"						
+							<?php
+							}
+							?>
+							>
+					<div id="FeaturedSimpleTileContents_<?php echo htmlspecialchars($headers[$n]) ; ?>"  class="HomePanelIN FeaturedSimpleTileContents TileContentShadow">
+					<h2><?php echo htmlspecialchars(i18n_get_translated(str_replace("*","",$headers[$n])))?></h2>
+					</div>
+				</div>
+					
+				</a>
+			
 				<?php	
 				}
 			}
@@ -464,9 +523,9 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 				}?>
 				<tr>
 				<td><div class="ListTitle"><a href="<?php echo $headerlink ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo htmlspecialchars(i18n_get_translated(str_replace("*","",$headers[$n])))?></a><?php hook('addthemeheadertoolaftername')?></div></td>
-				<td><div class="ListTools"><?php hook('addthemeheadertool')?><?php if (!hook("replacethemeselectlink")){?><a href="<?php echo $link ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $linklang;?></a><?php } 
-				if (checkperm("h") && $enable_theme_category_sharing) {?>&nbsp;&nbsp;<a href="<?php echo $sharelink ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["share"]?></a><?php }
-				if ($enable_theme_category_edit && checkperm("t")) {?>&nbsp;&nbsp;<a href="<?php echo $editlink ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["action-edit"]?></a><?php }
+				<td><div class="ListTools"><?php hook('addthemeheadertool')?><?php if (!hook("replacethemeselectlink")){?><a href="<?php echo $link ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $linklang;?></a><?php } 
+				if (checkperm("h") && $enable_theme_category_sharing) {?>&nbsp;&nbsp;<a href="<?php echo $sharelink ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["share"]?></a><?php }
+				if ($enable_theme_category_edit && checkperm("t")) {?>&nbsp;&nbsp;<a href="<?php echo $editlink ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["action-edit"]?></a><?php }
 				hook("addcustomtoolsplitpage");
 				?>
 				</div></td>
@@ -482,7 +541,7 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 				?>
 				<tr>
 				<td><div class="ListTitle"><a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo urlencode($headers[$n]["ref"])?>"><?php echo $headers[$n]["smart_theme_name"]?></a></div></td>
-				<td><div class="ListTools"><a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo urlencode($headers[$n]["ref"])?>">&gt;&nbsp;<?php echo $lang["action-select"]?></a></div></td>
+				<td><div class="ListTools"><a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo urlencode($headers[$n]["ref"])?>"><?php echo LINK_CARET ?><?php echo $lang["action-select"]?></a></div></td>
 				</tr>
 				<?php
 				}*/
@@ -492,7 +551,6 @@ elseif ($themes_category_split_pages && !$theme_direct_jump)
 			</div>
 	
 			</div>
-			<div class="PanelShadow"> </div>
 			</div>
 			<?php
 			}
@@ -614,8 +672,8 @@ if ($header=="" && !isset($themes[0]))
 					// Main featured collections page. Show smart theme name wth link to first level.
 					?>
 					
-					<a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo urlencode(getval("parentnode",0)) ?>&nodename=<?php echo urlencode(getval("parentnodename","")) ?>&simpleview=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="advertising_tile_smart<?php echo $n ;?>&simpleview=true">
-					<div class="FeaturedSimpleTile">										
+					<a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo urlencode(getval("parentnode",0)) ?>&nodename=<?php echo urlencode(getval("parentnodename","")) ?>&simpleview=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="featured_tile_smart<?php echo $n ;?>&simpleview=true">
+					<div class="HomePanelIN TileContentShadow FeaturedSimpleTile">										
 					<div id="FeaturedSimpleTileContents_smart<?php echo $n ; ?>"  class="HomePanelIN FeaturedSimpleTileContents" >	
 								<h2><?php echo str_replace("*","",i18n_get_translated($headers[$n]["smart_theme_name"])); ?></h2>
 							</div>			
@@ -627,14 +685,14 @@ if ($header=="" && !isset($themes[0]))
 					{				
 					# Sub node, display node name and make it a link to the previous level.
 					?>
-					<p><a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo urlencode(getval("parentnode",0)) ?>&nodename=<?php echo urlencode(getval("parentnodename","")) ?>&simpleview=true" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["back"]?></a></p>
+					<p><a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo urlencode(getval("parentnode",0)) ?>&nodename=<?php echo urlencode(getval("parentnodename","")) ?>&simpleview=true" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["back"]?></a></p>
 					<?php						
 					}
 				else
 					{
 					# First smart theme node, display link to main themes page
 					?>
-					<p><a href="<?php echo $baseurl_short?>pages/themes.php?simpleview=true" onClick="return CentralSpaceLoad(this,true);">&lt;&nbsp;<?php echo $lang["back"]?></a></p>
+					<p><a href="<?php echo $baseurl_short?>pages/themes.php?simpleview=true" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET_BACK ?><?php echo $lang["back"]?></a></p>
 					<?php
 					}
 				}
@@ -666,16 +724,16 @@ if ($header=="" && !isset($themes[0]))
 				{
 				if (getval("smart_theme","")!="") // We are in the smart theme already
 					{
-					$themes=get_smart_themes($headers[$n]["ref"],$node);
+                    $themes = get_smart_themes_nodes($headers[$n]['ref'], (7 == $headers[$n]['type']), $node);
 					for ($m=0;$m<count($themes);$m++)
-						{
+						{										
 						$s=$headers[$n]["name"] . ":" . $themes[$m]["name"];
-						if ($themes[$m]["children"]>0)
+						if ($themes[$m]['is_parent'])
 							{
 							?>
-							<a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo $themes[$m]["node"] ?>&parentnode=<?php echo urlencode($node) ?>&parentnodename=<?php echo urlencode(getval("nodename","")) ?>&nodename=<?php echo urlencode($themes[$m]["name"]) ?>&simpleview=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="advertising_tile_smart<?php echo $n ;?>">
+							<a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo $themes[$m]["node"] ?>&parentnode=<?php echo urlencode($node) ?>&parentnodename=<?php echo urlencode(getval("nodename","")) ?>&nodename=<?php echo urlencode($themes[$m]["name"]) ?>&simpleview=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="featured_tile_smart<?php echo $n ;?>">
 							<div class="FeaturedSimpleTile">
-								<div id="FeaturedSimpleTileContents_smart<?php echo $n ; ?>"  class="HomePanelIN FeaturedSimpleTileContents" >	
+								<div id="FeaturedSimpleTileContents_smart<?php echo $n ; ?>"  class="HomePanelIN FeaturedSimpleTileContents TileContentShadow">	
 									<h2><?php echo i18n_get_collection_name($themes[$m])?>	</h2>									
 								</div>
 							</div>			
@@ -686,9 +744,9 @@ if ($header=="" && !isset($themes[0]))
 							{
 							# Has no children. Default action is to show matching resources.
 							?>
-							<a href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode($s)?>&resetrestypes=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="advertising_tile_smart<?php echo $n ;?>">
+							<a href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode($s)?>&resetrestypes=true" onclick="return CentralSpaceLoad(this,true);" class="FeaturedSimplePanel HomePanel DashTile FeaturedSimpleLink" id="featured_tile_smart<?php echo $n ;?>">
 							<div class="FeaturedSimpleTile">
-								<div id="FeaturedSimpleTileContents_smart<?php echo $n ; ?>"  class="HomePanelIN FeaturedSimpleTileContents" >	
+								<div id="FeaturedSimpleTileContents_smart<?php echo $n ; ?>"  class="HomePanelIN FeaturedSimpleTileContents TileContentShadow" >	
 									<h2><?php echo i18n_get_collection_name($themes[$m])?></h2>
 								</div>			
 							</div>			
@@ -715,19 +773,24 @@ if ($header=="" && !isset($themes[0]))
 				</tr>
 	
 				<?php
-				$themes=get_smart_themes($headers[$n]["ref"],$node);
+				$themes = get_smart_themes_nodes($headers[$n]['ref'], (7 == $headers[$n]['type']), $node);
 				for ($m=0;$m<count($themes);$m++)
 					{
 					$s=$headers[$n]["name"] . ":" . $themes[$m]["name"];
-	
+
 					# Indent this item?
-					$indent=str_pad("",$themes[$m]["indent"]*5," ") . ($themes[$m]["indent"]==0?"":"&#746;") . "&nbsp;";
-					$indent=str_replace(" ","&nbsp;",$indent);
+					$indent = str_pad('', $themes[$m]['indent'] * 5, ' ');
+                    if(0 < $themes[$m]['indent'])
+                        {
+                        $indent .= '&#746;';
+                        }
+                    $indent .= '&nbsp;';
+					$indent = str_replace(" ","&nbsp;",$indent);
 	
 					?>
 					<tr>
 					<td><div class="ListTitle"><?php echo $indent?>
-					<?php if ($themes[$m]["children"]>0 && $themes_category_navigate_levels)
+					<?php if($themes[$m]['is_parent'] && $themes_category_navigate_levels)
 						{
 						# Has children. Default action is to navigate to a deeper level.
 						?>
@@ -747,11 +810,17 @@ if ($header=="" && !isset($themes[0]))
 					</div></td>
 					<?php hook("beforecollectiontoolscolumn");?>
 					<td><div class="ListTools">
-					<a href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode($s)?>&resetrestypes=true" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $themes_category_split_pages?$lang["action-viewmatchingresources"]:$lang["viewall"]?></a>
-					<?php if ($themes_category_split_pages && $headers[$n]['type']==7) { ?>
-					<a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo $themes[$m]["node"] ?>&parentnode=<?php echo urlencode($node) ?>&parentnodename=<?php echo urlencode(getval("nodename","")) ?>&nodename=<?php echo urlencode($themes[$m]["name"]) ?>" onClick="return CentralSpaceLoad(this,true);">&gt;&nbsp;<?php echo $lang["action-expand"]?></a>
-					<?php }
-					hook("additionalsmartthemetool");?>
+					<a href="<?php echo $baseurl_short?>pages/search.php?search=<?php echo urlencode($s)?>&resetrestypes=true" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $themes_category_split_pages?$lang["action-viewmatchingresources"]:$lang["viewall"]?></a>
+					<?php
+                    if($themes_category_split_pages && 7 == $headers[$n]['type'] && $themes[$m]['is_parent'])
+                        {
+                        ?>
+                        <a href="<?php echo $baseurl_short?>pages/themes.php?smart_theme=<?php echo $headers[$n]["ref"] ?>&node=<?php echo $themes[$m]["node"] ?>&parentnode=<?php echo urlencode($node) ?>&parentnodename=<?php echo urlencode(getval("nodename","")) ?>&nodename=<?php echo urlencode($themes[$m]["name"]) ?>" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET ?><?php echo $lang["action-expand"]?></a>
+                        <?php
+                        }
+
+                    hook('additionalsmartthemetool');
+                    ?>
 					</div></td>
 					</tr>
 					<?php
@@ -761,13 +830,12 @@ if ($header=="" && !isset($themes[0]))
 				</div>
 	
 				</div>
-				<div class="PanelShadow"> </div>
 				</div>
 				<?php
 				}
-			}
-		}
-	}
+			} //end of if ((checkperm("f*") || checkperm("f" . $headers[$n]["ref"])) && !checkperm("f-" . $headers[$n]["ref"]) && ($smart_theme=="" || $smart_theme==$headers[$n]["ref"]))
+		} // end of for ($n=0;$n<count($headers);$n++)
+	} // end of if ($header=="" && !isset($themes[0]))
 
 if($simpleview)
 	{
@@ -788,7 +856,7 @@ else
 			<div class="BasicsBox">
 				<h1><?php echo $lang["findpubliccollection"]?></h1>
 				<p class="tight"><?php echo text("findpublic")?></p>
-				<p><a href="<?php echo $baseurl_short?>pages/collection_public.php" onClick="return CentralSpaceLoad(this,true);"><?php echo $lang["findpubliccollection"]?>&nbsp;&gt;</a></p>
+				<p><a href="<?php echo $baseurl_short?>pages/collection_public.php" onClick="return CentralSpaceLoad(this,true);"><?php echo LINK_CARET . $lang["findpubliccollection"]?></a></p>
 			</div>
 			<?php
 			} 

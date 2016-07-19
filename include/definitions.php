@@ -1,6 +1,5 @@
 <?php
 
-
 // ------------------------- FIELD TYPES -------------------------
 $field_types=array(
 		0=>"fieldtype-text_box_single_line",
@@ -18,6 +17,8 @@ $field_types=array(
 		12=>"fieldtype-radio_buttons",
 		13=>"fieldtype-warning_message"
 		);
+
+$FIXED_LIST_FIELD_TYPES = array(2,3,7,9,12);
 
 // ------------------------- LOG_CODE_ -------------------------
 
@@ -68,3 +69,39 @@ function definitions_get_by_prefix($prefix)
 		}
 	return $return_definitions;
 	}
+
+
+// ------------------------- SYSTEM NOTIFICATION TYPES -------------------------
+define ('MANAGED_REQUEST',		1);
+define ('COLLECTION_REQUEST',	2);
+define ('USER_REQUEST',			3);
+define ('SUBMITTED_RESOURCE',	4);
+define ('SUBMITTED_COLLECTION',	5);
+
+// Advanced search mappings. USed to translate field names to !properties special search codes
+$advanced_search_properties=array("media_heightmin"=>"hmin",
+                                  "media_heightmax"=>"hmax",
+                                  "media_widthmin"=>"wmin",
+                                  "media_widthmax"=>"wmax",
+                                  "media_filesizemin"=>"fmin",
+                                  "media_filesizemax"=>"fmax",
+                                  "media_fileextension"=>"fext",
+                                  "properties_haspreviewimage"=>"pi",
+                                  "properties_contributor"=>"cu"
+                                  );
+							  
+
+// ------------------------- JOB STATUS / GENERIC STATUS CODES -------------------------
+define ('STATUS_DISABLED',				0);
+define ('STATUS_ACTIVE',				1);
+define ('STATUS_COMPLETE',				2);	
+define ('STATUS_ERROR',					5);
+
+// -------------------- General definitions --------------------
+
+define ('RESOURCE_LOG_APPEND_PREVIOUS', -1);    // used to specify that we want to append the previous resource_log entry
+
+// Global definition of link bullet carets - easy to change link caret style in the future.
+define('LINK_CARET','<i class="fa fa-caret-right"></i>&nbsp;'); 
+define('LINK_CARET_BACK','<i class="fa fa-caret-left"></i>&nbsp;');
+
